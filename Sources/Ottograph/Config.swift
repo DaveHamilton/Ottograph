@@ -10,11 +10,18 @@ struct Config: Codable {
     /// An empty string as the value means "remove the signature".
     var signatures: [String: String]
 
+    /// Map of From address (the alias) → address to auto-add to Cc when
+    /// that alias is selected. Optional so older configs keep working.
+    var autoCc: [String: String]?
+
     static let defaultConfig = Config(
         pollSeconds: 1.0,
         signatures: [
             "you@example.com": "Signature Name As It Appears In Mail Settings",
             "alias@example.com": "Another Signature Name",
+        ],
+        autoCc: [
+            "feedback@example.com": "you@example.com",
         ]
     )
 }
@@ -60,9 +67,13 @@ final class ConfigStore {
             parsed.signatures.map { ($0.key.lowercased(), $0.value) },
             uniquingKeysWith: { first, _ in first }
         )
+        let normalizedCc = parsed.autoCc.map { cc in
+            Dictionary(cc.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { first, _ in first })
+        }
         config = Config(
             pollSeconds: max(0.25, parsed.pollSeconds),
-            signatures: normalized
+            signatures: normalized,
+            autoCc: normalizedCc
         )
         return true
     }

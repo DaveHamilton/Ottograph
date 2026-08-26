@@ -68,6 +68,9 @@ First run:
   "signatures": {
     "dave@example.com": "Personal",
     "dave@podcast-example.com": "Show Signature"
+  },
+  "autoCc": {
+    "feedback@example.com": "dave@example.com"
   }
 }
 ```
@@ -76,6 +79,12 @@ Keys are From addresses (case-insensitive); values are signature **names
 exactly as they appear** in Mail → Settings → Signatures. An empty string
 value selects "None" for that alias. Config changes are picked up
 automatically — no restart needed.
+
+`autoCc` (optional) maps a From alias to an address that gets added to the
+Cc field whenever that alias is selected — e.g. auto-cc yourself on mail
+sent from a shared or feedback address. It de-duplicates (switching away
+and back won't double up), respects a Cc field you're actively editing,
+and an alias can have a signature mapping, an autoCc, or both.
 
 Each mapped signature must appear in the compose window's Signature popup for
 the selected account — i.e., it must be attached to the account that owns the
@@ -98,6 +107,8 @@ rewrite. Kept for archaeology.
       changes and new windows, polling demoted to a fallback safety net
 - [x] v0.4 — app bundle (`Scripts/build-app.sh`), signed, menu-bar-only
       (`LSUIElement`), Start at Login via SMAppService
+- [x] v0.5 — per-alias auto-Cc: choosing a mapped From alias also adds a
+      configured address to the Cc field (deduped, focus-preserving)
 - [ ] Settings window (edit mappings in UI, read signature list from Mail)
 - [ ] App icon
 - [ ] Notarized distribution build (Developer ID + hardened runtime)

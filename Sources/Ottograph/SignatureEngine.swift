@@ -190,7 +190,7 @@ final class SignatureEngine {
         for rawWindow in windows {
             guard CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { continue }
             let window = rawWindow as! AXUIElement
-            guard let compose = composePopups(in: window) else { continue }
+            guard let compose = discoverControls(in: window) else { continue }
 
             let key = AXElementKey(element: window)
             seenWindows.insert(key)
@@ -202,7 +202,10 @@ final class SignatureEngine {
 
             guard email != lastSenderByWindow[key] else { continue }
 
-            guard let signatureName = store.config.signatures[email] else {
+            let signatureName = store.config.signatures[email]
+            let ccAddress = store.config.autoCc?[email]
+
+            guard signatureName != nil || ccAddress != nil else {
                 lastSenderByWindow[key] = email
                 retryState[key] = nil
                 onStatus?("No mapping for \(email)")
@@ -214,6 +217,20 @@ final class SignatureEngine {
             // one open menu at a time. Try again shortly.
             if openMenu(of: compose.from) != nil {
                 scheduleScan(after: 0.35)
+                continue
+            }
+
+            // Auto-Cc first — it's idempotent (existing tokens are read
+            // for dedupe), so a signature retry replaying this block is
+            // harmless.
+            if let ccAddress {
+                ensureCc(ccAddress, controls: compose, forEmail: email)
+            }
+
+            guard let signatureName else {
+                // Cc-only alias: nothing further to apply.
+                lastSenderByWindow[key] = email
+                retryState[key] = nil
                 continue
             }
 
@@ -262,9 +279,11 @@ final class SignatureEngine {
 
     // MARK: - Compose window discovery
 
-    private struct ComposePopups {
+    private struct ComposeControls {
         let from: AXUIElement
         let signature: AXUIElement
+        let cc: AXUIElement?
+        let subject: AXUIElement?
     }
 
     /// Roles we never need to descend into — prunes the (large) subtrees of
@@ -274,11 +293,12 @@ final class SignatureEngine {
         "AXStaticText", "AXTextArea", "AXImage", "AXMenu",
     ]
 
-    /// Returns the From and Signature popups if this window is a compose
-    /// window (i.e. it has a From popup), else nil.
-    private func composePopups(in window: AXUIElement) -> ComposePopups? {
+    /// Returns the compose window's controls if this is a compose window
+    /// (i.e. it has From and Signature popups), else nil.
+    private func discoverControls(in window: AXUIElement) -> ComposeControls? {
         var popups: [AXUIElement] = []
-        collectPopups(in: window, depth: 0, into: &popups)
+        var textFields: [AXUIElement] = []
+        collectControls(in: window, depth: 0, popups: &popups, textFields: &textFields)
         guard !popups.isEmpty else { return nil }
 
         var fromPopup: AXUIElement?
@@ -295,11 +315,25 @@ final class SignatureEngine {
             }
         }
 
+        var ccField: AXUIElement?
+        var subjectField: AXUIElement?
+        for field in textFields {
+            let label = AX.labelText(of: field) ?? ""
+            if label.hasPrefix("Cc") {
+                ccField = ccField ?? field
+            } else if label.hasPrefix("Subject") {
+                subjectField = subjectField ?? field
+            }
+        }
+
         guard let fromPopup, let signaturePopup else { return nil }
-        return ComposePopups(from: fromPopup, signature: signaturePopup)
+        return ComposeControls(from: fromPopup, signature: signaturePopup, cc: ccField, subject: subjectField)
     }
 
-    private func collectPopups(in element: AXUIElement, depth: Int, into popups: inout [AXUIElement]) {
+    private func collectControls(
+        in element: AXUIElement, depth: Int,
+        popups: inout [AXUIElement], textFields: inout [AXUIElement]
+    ) {
         guard depth < 15 else { return }
         for child in AX.children(of: element) {
             let role = AX.role(of: child)
@@ -307,8 +341,15 @@ final class SignatureEngine {
                 popups.append(child)
                 continue
             }
+            if role == "AXTextField" {
+                // Leaf on purpose: an address field's children are its
+                // token pills (themselves AXTextFields) — we want the
+                // container here, not the tokens.
+                textFields.append(child)
+                continue
+            }
             if Self.prunedRoles.contains(role) { continue }
-            collectPopups(in: child, depth: depth + 1, into: &popups)
+            collectControls(in: child, depth: depth + 1, popups: &popups, textFields: &textFields)
         }
     }
 
@@ -324,6 +365,57 @@ final class SignatureEngine {
         AX.children(of: popup).first { AX.role(of: $0) == "AXMenu" }
     }
 
+    // MARK: - Auto-Cc
+
+    /// Adds `address` to the compose window's Cc field if it isn't there
+    /// already. A token field renders each address as a pill (a child
+    /// AXTextField whose value is the plain address), so dedupe reads the
+    /// existing tokens. Setting the field's value tokenizes instantly, but
+    /// the message model only picks the recipient up on focus-out — so the
+    /// field is focused briefly and focus is then handed back to wherever
+    /// it was.
+    private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String) {
+        guard let ccField = controls.cc else {
+            onStatus?("No Cc field found for \(email)")
+            return
+        }
+
+        let existingTokens = AX.children(of: ccField)
+            .compactMap { AX.stringValue(of: $0) }
+            .map(Self.cleanAddress)
+        let want = Self.cleanAddress(address)
+        guard !existingTokens.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) else {
+            return
+        }
+
+        // Never fight the user for a field they're editing right now.
+        var previousFocus: AXUIElement?
+        if let axApp,
+           let rawFocus = AX.attribute(axApp, kAXFocusedUIElementAttribute),
+           CFGetTypeID(rawFocus) == AXUIElementGetTypeID() {
+            let focused = rawFocus as! AXUIElement
+            if CFEqual(focused, ccField) { return }
+            previousFocus = focused
+        }
+
+        let combined = (existingTokens + [want]).joined(separator: ", ")
+        guard AXUIElementSetAttributeValue(ccField, kAXValueAttribute as CFString, combined as CFTypeRef) == .success else {
+            onStatus?("Couldn't set Cc for \(email)")
+            log("Couldn't set Cc \(address) for \(email)")
+            return
+        }
+
+        // Commit the tokens to the message model: focus in, focus away.
+        _ = AXUIElementSetAttributeValue(ccField, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        usleep(120_000)
+        if let restoreTarget = previousFocus ?? controls.subject {
+            _ = AXUIElementSetAttributeValue(restoreTarget, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        }
+
+        log("Added Cc \(address) for \(email)")
+        onStatus?("Added Cc \(address) for \(email)")
+    }
+
     /// Blink-free safety net: well after an apply, re-read the Signature
     /// popup with fresh elements. Only a genuine miss re-applies (which
     /// then blinks once more — the acceptable cost of a real failure).
@@ -331,7 +423,7 @@ final class SignatureEngine {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self, self.isRunning else { return }
             guard self.lastSenderByWindow[windowKey] == email else { return } // sender moved on
-            guard let compose = self.composePopups(in: window),
+            guard let compose = self.discoverControls(in: window),
                   let current = AX.stringValue(of: compose.signature) else { return } // window gone/rebuilding
             if current != target {
                 self.log("Post-apply check for \(email): expected '\(target)', found '\(current)' — reapplying")
@@ -400,12 +492,23 @@ final class SignatureEngine {
 
     // MARK: - Helpers
 
+    /// Invisible Unicode formatting marks (bidi isolates etc.) that Mail
+    /// wraps around addresses in some fields — they break string equality
+    /// against the plain address from the config.
+    private static let formattingMarks = CharacterSet(charactersIn:
+        "\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}")
+
+    static func cleanAddress(_ s: String) -> String {
+        String(String.UnicodeScalarView(s.unicodeScalars.filter { !formattingMarks.contains($0) }))
+            .trimmingCharacters(in: .whitespaces)
+    }
+
     /// Extracts the address from From-popup values like
     /// "Dave Hamilton – dave@example.com" or "Name <dave@example.com>".
     static func emailAddress(in sender: String) -> String? {
         for token in sender.split(whereSeparator: { $0 == " " || $0 == "\n" }) {
             guard token.contains("@") else { continue }
-            return token.trimmingCharacters(in: CharacterSet(charactersIn: "<>,"))
+            return cleanAddress(token.trimmingCharacters(in: CharacterSet(charactersIn: "<>,")))
         }
         return nil
     }
