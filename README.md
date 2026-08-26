@@ -40,16 +40,24 @@ is Accessibility.
 
 ## Running it
 
+The real thing — builds `Ottograph.app`, signs it (stable Accessibility
+identity), and installs it to `~/Applications`:
+
 ```
-swift run
+Scripts/build-app.sh --install
+open ~/Applications/Ottograph.app
 ```
+
+For quick development iteration, `swift run` still works (grant Accessibility
+to your terminal app in that case, since CLI tools inherit it from their
+parent). The bundled app adds a "Start at Login" menu item; the bare
+executable can't offer one (SMAppService requires a bundle).
 
 First run:
 
 1. macOS will ask for the Accessibility permission
-   (System Settings → Privacy & Security → Accessibility). When running via
-   `swift run`, grant it to your **terminal app** — CLI tools inherit it from
-   their parent. A future app-bundle build will request it as itself.
+   (System Settings → Privacy & Security → Accessibility). Approve it once —
+   the signed bundle's identity is stable across rebuilds.
 2. A default config is created at
    `~/Library/Application Support/Ottograph/config.json`. Edit it
    (menu bar icon → Open Config File) to map your aliases:
@@ -88,9 +96,11 @@ rewrite. Kept for archaeology.
       every compose window tracked independently
 - [x] v0.3 — event-driven engine (AXObserver): instant reaction to From
       changes and new windows, polling demoted to a fallback safety net
+- [x] v0.4 — app bundle (`Scripts/build-app.sh`), signed, menu-bar-only
+      (`LSUIElement`), Start at Login via SMAppService
 - [ ] Settings window (edit mappings in UI, read signature list from Mail)
-- [ ] Launch at login
-- [ ] App bundle + notarization for distribution
+- [ ] App icon
+- [ ] Notarized distribution build (Developer ID + hardened runtime)
 - [ ] Localization-proof popup detection (currently matches English
       "From"/"Signature" labels with value-based fallbacks)
 

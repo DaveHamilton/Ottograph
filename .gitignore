@@ -1,5 +1,6 @@
 .build/
 .swiftpm/
+dist/
 .DS_Store
 *.xcodeproj
 .claude/settings.local.json
