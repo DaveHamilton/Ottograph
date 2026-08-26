@@ -6,6 +6,20 @@ import AppKit
 /// which rules out the full-color app icon artwork.
 enum MenuBarIcon {
     static func make() -> NSImage {
+        // Prefer the generated template artwork bundled with the app
+        // (Assets/nbp-menubar.png → menubar-template.png, 36px = 18pt @2x).
+        if let url = Bundle.main.url(forResource: "menubar-template", withExtension: "png"),
+           let bundled = NSImage(contentsOf: url) {
+            bundled.size = NSSize(width: 18, height: 18)
+            bundled.isTemplate = true
+            bundled.accessibilityDescription = "Ottograph"
+            return bundled
+        }
+        return drawn()
+    }
+
+    /// Code-drawn fallback for bare `swift run` builds with no bundle.
+    private static func drawn() -> NSImage {
         let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
             NSColor.black.setStroke()
             NSColor.black.setFill()

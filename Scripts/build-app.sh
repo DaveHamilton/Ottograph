@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.8.2"
+VERSION="0.8.3"
 BUNDLE_ID="com.davehamilton.Ottograph"
 APP="dist/Ottograph.app"
 
@@ -15,6 +15,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Ottograph "$APP/Contents/MacOS/Ottograph"
 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+if [[ -f Assets/menubar-template.png ]]; then
+	cp Assets/menubar-template.png "$APP/Contents/Resources/menubar-template.png"
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

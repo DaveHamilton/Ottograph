@@ -19,3 +19,7 @@ echo "icon source: $SOURCE"
 swift Scripts/render-icon.swift "$SOURCE" "$ICONSET"
 iconutil -c icns "$ICONSET" -o Assets/AppIcon.icns
 echo "Assets/AppIcon.icns updated"
+
+if [[ -f Assets/nbp-menubar.png ]]; then
+	swift Scripts/make-menubar-icon.swift Assets/nbp-menubar.png Assets/menubar-template.png
+fi
