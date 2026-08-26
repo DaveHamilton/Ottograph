@@ -96,6 +96,14 @@ rewrite. Kept for archaeology.
 
 ## Limitations
 
+- **Tabbed compose windows** (Merge All Windows / "prefer tabs") work with
+  caveats: background tabs vanish from the accessibility tree, so per-window
+  state is retained for 10 minutes to avoid re-applying on every tab switch.
+  However, macOS's AX exposure of tabbed windows is flaky — popup discovery
+  intermittently fails, and a From change made immediately around a tab
+  switch can occasionally be missed (the 1s fallback scan usually catches
+  it). Separate compose windows remain the well-tested path.
+
 - Requires the Accessibility permission (see First run above).
 - Applying a signature briefly opens the Signature popup menu on screen —
   it's the same UI action a human would take, just fast.

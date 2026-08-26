@@ -30,6 +30,7 @@ final class SignatureEngine {
     private let store: ConfigStore
     private var timer: Timer?
     private var lastSenderByWindow: [AXElementKey: String] = [:]
+    private var windowLastSeen: [AXElementKey: Date] = [:]
     private var retryState: [AXElementKey: (email: String, attempts: Int)] = [:]
     private var axApp: AXUIElement?
     private var axAppPID: pid_t = -1
@@ -193,6 +194,7 @@ final class SignatureEngine {
 
             let key = AXElementKey(element: window)
             seenWindows.insert(key)
+            windowLastSeen[key] = Date()
             observeFromPopup(compose.from)
 
             guard let senderValue = AX.stringValue(of: compose.from),
@@ -244,8 +246,17 @@ final class SignatureEngine {
             }
         }
 
-        // Forget windows that no longer exist.
-        lastSenderByWindow = lastSenderByWindow.filter { seenWindows.contains($0.key) }
+        // Forget windows we haven't seen for a while. NOT immediately:
+        // a compose window in a background tab disappears from the AX
+        // windows list entirely, and pruning it right away would make it
+        // look brand-new on every tab switch — triggering a pointless
+        // re-apply (and menu blink) each time it comes back to the front.
+        let cutoff = Date().addingTimeInterval(-600)
+        lastSenderByWindow = lastSenderByWindow.filter { key, _ in
+            seenWindows.contains(key) || (windowLastSeen[key] ?? .distantPast) > cutoff
+        }
+        windowLastSeen = windowLastSeen.filter { lastSenderByWindow.keys.contains($0.key) }
+        // Retries, by contrast, only make sense for windows still on screen.
         retryState = retryState.filter { seenWindows.contains($0.key) }
     }
 
