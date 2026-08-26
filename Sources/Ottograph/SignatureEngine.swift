@@ -216,7 +216,14 @@ final class SignatureEngine {
             }
 
             switch apply(signatureName: signatureName, to: compose.signature, in: window, forEmail: email) {
-            case .applied, .giveUp:
+            case .applied:
+                lastSenderByWindow[key] = email
+                retryState[key] = nil
+                scheduleVerification(
+                    windowKey: key, window: window, email: email,
+                    target: signatureName.isEmpty ? "None" : signatureName
+                )
+            case .giveUp:
                 lastSenderByWindow[key] = email
                 retryState[key] = nil
             case .retry:
@@ -306,6 +313,23 @@ final class SignatureEngine {
         AX.children(of: popup).first { AX.role(of: $0) == "AXMenu" }
     }
 
+    /// Blink-free safety net: well after an apply, re-read the Signature
+    /// popup with fresh elements. Only a genuine miss re-applies (which
+    /// then blinks once more — the acceptable cost of a real failure).
+    private func scheduleVerification(windowKey: AXElementKey, window: AXUIElement, email: String, target: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            guard let self, self.isRunning else { return }
+            guard self.lastSenderByWindow[windowKey] == email else { return } // sender moved on
+            guard let compose = self.composePopups(in: window),
+                  let current = AX.stringValue(of: compose.signature) else { return } // window gone/rebuilding
+            if current != target {
+                self.log("Post-apply check for \(email): expected '\(target)', found '\(current)' — reapplying")
+                self.lastSenderByWindow[windowKey] = nil
+                self.scheduleScan(after: 0.05)
+            }
+        }
+    }
+
     private func apply(signatureName: String, to popup: AXUIElement, in window: AXUIElement, forEmail email: String) -> ApplyResult {
         // Empty string in the config means "no signature" — Mail's popup
         // calls that item "None".
@@ -319,6 +343,7 @@ final class SignatureEngine {
         }
 
         guard AX.press(popup) else {
+            log("Couldn't press Signature popup for \(email) — will retry")
             onStatus?("Couldn't open Signature popup — retrying")
             return .retry
         }
@@ -335,6 +360,7 @@ final class SignatureEngine {
             usleep(5_000)
         }
         guard let menu else {
+            log("Signature menu didn't open for \(email) — will retry")
             onStatus?("Signature menu didn't open — retrying")
             return .retry
         }
@@ -348,25 +374,14 @@ final class SignatureEngine {
 
         AX.press(item)
 
-        // Confirm the selection actually took before declaring victory.
-        // Applying a signature makes Mail rebuild part of the compose
-        // header, which can leave our held popup reference stale and
-        // reading a phantom old value — so on a mismatch, re-discover the
-        // popup and trust only a *fresh* read. Retrying on the stale read
-        // caused a redundant second menu blink on every From change.
-        usleep(150_000)
-        if AX.stringValue(of: popup) == target {
-            log("Applied '\(target)' for \(email)")
-            onStatus?("Applied '\(target)' for \(email)")
-            return .applied
-        }
-        if let freshValue = composePopups(in: window).map({ AX.stringValue(of: $0.signature) }),
-           freshValue != nil, freshValue != target {
-            onStatus?("Signature didn't take — retrying")
-            return .retry
-        }
-        // Fresh read matches (or the window is mid-rebuild): the press on a
-        // found menu item almost certainly landed. Don't blink again.
+        // A press on a found menu item is trusted — no synchronous
+        // re-verification. Mail updates the popup's readable value on its
+        // own (slow, unpredictable) schedule after a signature swap, so
+        // verifying "too soon" reported phantom failures and triggered a
+        // redundant second menu blink on every single From change. The
+        // swallowed-press failure mode is already caught above (menu never
+        // opened), and a delayed, blink-free post-apply check in tick()
+        // covers the rare genuine miss.
         log("Applied '\(target)' for \(email)")
         onStatus?("Applied '\(target)' for \(email)")
         return .applied
