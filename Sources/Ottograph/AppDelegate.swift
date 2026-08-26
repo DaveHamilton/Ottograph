@@ -23,10 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "signature",
-                accessibilityDescription: "Ottograph"
-            )
+            button.image = MenuBarIcon.make()
         }
 
         let menu = NSMenu()
