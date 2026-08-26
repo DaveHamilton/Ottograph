@@ -80,6 +80,11 @@ exactly as they appear** in Mail → Settings → Signatures. An empty string
 value selects "None" for that alias. Config changes are picked up
 automatically — no restart needed.
 
+Prefer a UI? Menu bar → **Settings…** (⌘,) edits all of this in a window,
+and its "Load Signature Names from Mail" button makes the signature column
+pickable (that one convenience uses Apple events, so macOS asks once for
+Automation permission; everything else remains pure Accessibility).
+
 `autoCc` (optional) maps a From alias to an address that gets added to the
 Cc field whenever that alias is selected — e.g. auto-cc yourself on mail
 sent from a shared or feedback address. It de-duplicates (switching away
@@ -127,7 +132,9 @@ rewrite. Kept for archaeology.
 - [x] v0.6 — "Send in 2 Minutes" (⌃⌥⌘S): schedules the focused compose
       window via Mail's native Send Later, for a regret window beyond
       Undo Send's 30-second cap
-- [ ] Settings window (edit mappings in UI, read signature list from Mail)
+- [x] v0.7 — Settings window (menu bar → Settings…): edit alias mappings,
+      auto-Cc, and timing in a UI; optionally loads your signature names
+      from Mail (one-time Automation permission) so they're pickable
 - [ ] App icon
 - [ ] Notarized distribution build (Developer ID + hardened runtime)
 - [ ] Localization-proof popup detection (currently matches English

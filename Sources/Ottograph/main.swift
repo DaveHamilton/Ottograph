@@ -12,8 +12,10 @@ if lockFD == -1 || flock(lockFD, LOCK_EX | LOCK_NB) != 0 {
     exit(1)
 }
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
-app.run()
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.accessory) // menu bar only, no Dock icon
+    app.run() // never returns; `delegate` lives for the app's lifetime
+}

@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 BUNDLE_ID="com.davehamilton.Ottograph"
 APP="dist/Ottograph.app"
 
@@ -39,9 +39,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>CFBundleVersion</key>
 	<string>${VERSION}</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>13.0</string>
+	<string>14.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Ottograph reads your signature names from Mail so Settings can offer them as choices.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Dave Hamilton</string>
 </dict>

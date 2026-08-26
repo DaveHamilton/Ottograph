@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import ServiceManagement
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let store = ConfigStore()
@@ -11,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var loginMenuItem: NSMenuItem?
     private var sendDelayedItem: NSMenuItem?
     private var hotKey: HotKey?
+    private var settingsController: SettingsWindowController?
 
     /// SMAppService (login items) only works from a real .app bundle,
     /// not when running the bare executable via `swift run`.
@@ -38,7 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sendItem.target = self
         menu.addItem(sendItem)
         sendDelayedItem = sendItem
-        menu.addItem(withTitle: "Open Config File", action: #selector(openConfig), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Open Config File", action: #selector(openConfig), keyEquivalent: "o").target = self
         menu.addItem(withTitle: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r").target = self
         if isBundledApp {
             let item = NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
@@ -102,6 +105,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusMenuItem.title = "Login item error: \(error.localizedDescription)"
         }
         loginMenuItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    }
+
+    @objc private func showSettings() {
+        if settingsController == nil {
+            settingsController = SettingsWindowController(store: store) { [weak self] in
+                guard let self else { return }
+                self.sendDelayedItem?.title = self.sendDelayedTitle
+                self.statusMenuItem.title = "Settings saved"
+            }
+        }
+        settingsController?.show()
     }
 
     @objc private func openConfig() {

@@ -56,6 +56,17 @@ final class ConfigStore {
         }
     }
 
+    /// Writes a new config to disk (the engine hot-reloads it) and adopts
+    /// it immediately.
+    func save(_ newConfig: Config) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(newConfig)
+        try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        try data.write(to: Self.fileURL)
+        reloadIfChanged(force: true)
+    }
+
     /// Reloads the config if the file's modification date changed.
     /// Returns true if a reload happened and parsed successfully.
     @discardableResult
