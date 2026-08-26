@@ -14,6 +14,11 @@ struct Config: Codable {
     /// that alias is selected. Optional so older configs keep working.
     var autoCc: [String: String]?
 
+    /// Delay for the "Send in N minutes" action (seconds). Default 120.
+    var sendDelaySeconds: Double?
+
+    var sendDelay: TimeInterval { max(10, sendDelaySeconds ?? 120) }
+
     static let defaultConfig = Config(
         pollSeconds: 1.0,
         signatures: [
@@ -22,7 +27,8 @@ struct Config: Codable {
         ],
         autoCc: [
             "feedback@example.com": "you@example.com",
-        ]
+        ],
+        sendDelaySeconds: 120
     )
 }
 
@@ -73,7 +79,8 @@ final class ConfigStore {
         config = Config(
             pollSeconds: max(0.25, parsed.pollSeconds),
             signatures: normalized,
-            autoCc: normalizedCc
+            autoCc: normalizedCc,
+            sendDelaySeconds: parsed.sendDelaySeconds
         )
         return true
     }

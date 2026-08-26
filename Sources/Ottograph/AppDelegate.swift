@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -8,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusMenuItem = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private let toggleMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
     private var loginMenuItem: NSMenuItem?
+    private var sendDelayedItem: NSMenuItem?
+    private var hotKey: HotKey?
 
     /// SMAppService (login items) only works from a real .app bundle,
     /// not when running the bare executable via `swift run`.
@@ -31,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleMenuItem.target = self
         toggleMenuItem.state = .on
         menu.addItem(toggleMenuItem)
+        let sendItem = NSMenuItem(title: sendDelayedTitle, action: #selector(sendDelayed), keyEquivalent: "")
+        sendItem.target = self
+        menu.addItem(sendItem)
+        sendDelayedItem = sendItem
         menu.addItem(withTitle: "Open Config File", action: #selector(openConfig), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r").target = self
         if isBundledApp {
@@ -46,8 +53,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         engine.onStatus = { [weak self] status in
             self?.statusMenuItem.title = status
+            self?.sendDelayedItem?.title = self?.sendDelayedTitle ?? "Send Delayed"
         }
         engine.start()
+
+        // ⌃⌥⌘S — "send, but give me time to regret it"
+        hotKey = HotKey(
+            keyCode: UInt32(kVK_ANSI_S),
+            carbonModifiers: UInt32(cmdKey | optionKey | controlKey)
+        ) { [weak self] in
+            self?.sendDelayed()
+        }
+    }
+
+    private var sendDelayedTitle: String {
+        let seconds = store.config.sendDelay
+        let amount = seconds.truncatingRemainder(dividingBy: 60) == 0
+            ? "\(Int(seconds) / 60) Minute\(Int(seconds) / 60 == 1 ? "" : "s")"
+            : "\(Int(seconds)) Seconds"
+        return "Send in \(amount)  (⌃⌥⌘S)"
+    }
+
+    @objc private func sendDelayed() {
+        DelayedSend.schedule(afterSeconds: store.config.sendDelay) { [weak self] status in
+            self?.statusMenuItem.title = status
+            print("[DelayedSend] \(status)")
+        }
     }
 
     @objc private func toggleEnabled() {

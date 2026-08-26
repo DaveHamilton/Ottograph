@@ -86,6 +86,21 @@ sent from a shared or feedback address. It de-duplicates (switching away
 and back won't double up), respects a Cc field you're actively editing,
 and an alias can have a signature mapping, an autoCc, or both.
 
+## Send in 2 Minutes (⌃⌥⌘S)
+
+Mail's Undo Send caps out at 30 seconds, the limit isn't stored in any
+`defaults` domain, and the real setting lives in Mail's TCC-protected,
+cloud-synced store — there is no terminal override. So Ottograph provides a
+longer regret window a different way: press **⌃⌥⌘S** in a compose window
+(or use the menu bar item) and Ottograph drives Mail's own **Send Later**
+flow, scheduling the message for now + `sendDelaySeconds` (default 120;
+set it in the config). Until then the message sits in Mail's Send Later
+mailbox where you can open, edit, or delete it — a strictly better undo
+than Undo Send, and the schedule survives quitting Mail.
+
+Requires the Send Later button in the compose window's toolbar (it's there
+by default) and, like everything else here, English UI labels.
+
 Each mapped signature must appear in the compose window's Signature popup for
 the selected account — i.e., it must be attached to the account that owns the
 alias in Mail → Settings → Signatures.
@@ -109,6 +124,9 @@ rewrite. Kept for archaeology.
       (`LSUIElement`), Start at Login via SMAppService
 - [x] v0.5 — per-alias auto-Cc: choosing a mapped From alias also adds a
       configured address to the Cc field (deduped, focus-preserving)
+- [x] v0.6 — "Send in 2 Minutes" (⌃⌥⌘S): schedules the focused compose
+      window via Mail's native Send Later, for a regret window beyond
+      Undo Send's 30-second cap
 - [ ] Settings window (edit mappings in UI, read signature list from Mail)
 - [ ] App icon
 - [ ] Notarized distribution build (Developer ID + hardened runtime)

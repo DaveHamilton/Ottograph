@@ -37,6 +37,20 @@ enum AX {
         return stringValue(of: label) ?? title(of: label)
     }
 
+    static func description(of element: AXUIElement) -> String? {
+        attribute(element, kAXDescriptionAttribute) as? String
+    }
+
+    /// Depth-first search for the first element passing `test`.
+    static func findFirst(in element: AXUIElement, depth: Int = 0, where test: (AXUIElement) -> Bool) -> AXUIElement? {
+        guard depth < 15 else { return nil }
+        if test(element) { return element }
+        for child in children(of: element) {
+            if let hit = findFirst(in: child, depth: depth + 1, where: test) { return hit }
+        }
+        return nil
+    }
+
     @discardableResult
     static func press(_ element: AXUIElement) -> Bool {
         AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
