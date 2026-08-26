@@ -23,32 +23,35 @@ enum DelayedSend {
         }
         let window = rawWindow as! AXUIElement
 
-        guard let sendLaterButton = AX.findFirst(in: window, where: {
-            AX.role(of: $0) == "AXMenuButton" && AX.description(of: $0) == "Send Later"
-        }) else {
-            onStatus("Focus a compose window first (its toolbar needs the Send Later button)")
+        // Use the Message > Send Later > Send Later… menu bar item rather
+        // than the toolbar button — it's always present regardless of
+        // toolbar customization, and pressing it via AX doesn't visibly
+        // open any menu. Its enabled state also doubles as validation
+        // (it's disabled unless a sendable compose window is key).
+        guard let rawBar = AX.attribute(app, kAXMenuBarAttribute),
+              CFGetTypeID(rawBar) == AXUIElementGetTypeID() else {
+            onStatus("Couldn't read Mail's menu bar")
+            return
+        }
+        let menuBar = rawBar as! AXUIElement
+        guard let messageMenu = AX.children(of: menuBar)
+                .first(where: { AX.title(of: $0) == "Message" })
+                .flatMap({ AX.children(of: $0).first }),
+              let sendLaterItem = AX.children(of: messageMenu)
+                .first(where: { AX.title(of: $0) == "Send Later" }),
+              let submenu = AX.children(of: sendLaterItem).first,
+              let customItem = AX.children(of: submenu)
+                .first(where: { AX.title(of: $0) == "Send Later…" }) else {
+            onStatus("Message > Send Later > Send Later… not found")
             return
         }
 
-        // The Send Later menu only opens for the frontmost window.
         mail.activate(options: [])
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         usleep(400_000)
 
-        guard AX.press(sendLaterButton) else {
-            onStatus("Couldn't press Send Later")
-            return
-        }
-        guard let menu = wait(timeout: 1.5, for: {
-            AX.children(of: sendLaterButton).first { AX.role(of: $0) == "AXMenu" }
-                ?? AX.findFirst(in: window, where: { AX.role(of: $0) == "AXMenu" })
-        }) else {
-            onStatus("Send Later menu didn't open")
-            return
-        }
-        guard let customItem = AX.children(of: menu).first(where: { AX.title(of: $0) == "Send Later…" }) else {
-            AX.cancel(menu)
-            onStatus("'Send Later…' menu item not found")
+        guard (AX.attribute(customItem, kAXEnabledAttribute) as? Bool) ?? false else {
+            onStatus("Send Later unavailable — is a compose window with a recipient focused?")
             return
         }
         AX.press(customItem)
