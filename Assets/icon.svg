@@ -1,0 +1,36 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FCF9F1"/>
+      <stop offset="1" stop-color="#EAE2CE"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#31418A"/>
+      <stop offset="1" stop-color="#1B2450"/>
+    </linearGradient>
+  </defs>
+
+  <!-- squircle canvas -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#paper)"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="none" stroke="#D9CFB6" stroke-width="8"/>
+
+  <!-- cursive O with a tail flowing out of the loop -->
+  <g fill="none" stroke="url(#ink)" stroke-width="48" stroke-linecap="round">
+    <!-- the O loop, small opening at the right where the tail exits -->
+    <path d="M 604 567 A 177 177 0 1 1 616 472"/>
+    <!-- exit tail sweeping right into the flourish -->
+    <path d="M 604 567 C 664 644, 782 652, 868 566"/>
+  </g>
+
+  <!-- robot antenna -->
+  <g stroke="url(#ink)" stroke-width="30" stroke-linecap="round">
+    <line x1="440" y1="326" x2="440" y2="252"/>
+  </g>
+  <circle cx="440" cy="218" r="34" fill="#C9563C"/>
+  <circle cx="429" cy="207" r="10" fill="#F2B8A4"/>
+
+  <!-- signature underline flourish -->
+  <path d="M 268 748 C 430 818, 662 812, 818 702"
+        fill="none" stroke="url(#ink)" stroke-width="28" stroke-linecap="round"/>
+  <circle cx="842" cy="686" r="15" fill="#1B2450"/>
+</svg>

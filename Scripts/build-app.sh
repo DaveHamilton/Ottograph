@@ -5,15 +5,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.7.0"
+VERSION="0.8.0"
 BUNDLE_ID="com.davehamilton.Ottograph"
 APP="dist/Ottograph.app"
 
 swift build -c release
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Ottograph "$APP/Contents/MacOS/Ottograph"
+cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,6 +27,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<string>Ottograph</string>
 	<key>CFBundleExecutable</key>
 	<string>Ottograph</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>${BUNDLE_ID}</string>
 	<key>CFBundleInfoDictionaryVersion</key>
