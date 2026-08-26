@@ -1,5 +1,7 @@
 # Ottograph ✒️
 
+<img src="Assets/otto.png" width="320" alt="Otto, a small friendly robot, signing a flowing cursive O with a fountain pen" align="right">
+
 **The right signature, automatically.**
 
 Ottograph is a macOS menu bar app that gives Apple Mail what it has never had
@@ -13,6 +15,10 @@ it — instantly, exactly as if you'd chosen it from the Signature popup yoursel
 of Mac automation. An *autograph* is a signature. Ottograph is Otto, writing
 your autograph. It's also a loose homage to SigPro, which did this job back when
 Mail still allowed plugins.
+
+The app icon and mascot art were generated with Nano Banana Pro
+(`Assets/nbp-icon.png`, `Assets/otto.png`); `Scripts/make-icon.sh` masks the
+icon artwork into the macOS squircle and packs the `.icns`.
 
 ## How it works
 
