@@ -25,12 +25,15 @@ windows the user opens (⌘N, reply, forward) are invisible to AppleScript.**
 
 So Ottograph uses the Accessibility API instead. Every compose window exposes
 its **From popup** (readable) and **Signature popup** (settable) in the
-accessibility tree. Ottograph polls Mail's windows (default: once per second,
-only while Mail is running), and when a window's From address changes — or a
-compose window is first seen — it selects the mapped signature in that
-window's Signature popup, exactly like a human would. Each compose window is
-tracked independently, and Ottograph only acts on a *change* of sender, so if
-you manually pick a different signature afterward, it leaves you alone.
+accessibility tree. Ottograph is event-driven: an AXObserver watches Mail for
+new windows and for From-popup changes, so when you pick an alias — or a
+compose window first appears — the mapped signature is selected in that
+window's Signature popup immediately, exactly like a human would. A polling
+scan (default: every `pollSeconds`, only while Mail is running) remains as a
+safety net for anything events miss, such as sleep/wake or a Mail relaunch.
+Each compose window is tracked independently, and Ottograph only acts on a
+*change* of sender, so if you manually pick a different signature afterward,
+it leaves you alone.
 
 Bonus of this approach: no Apple events at all, so the only permission needed
 is Accessibility.
@@ -83,6 +86,8 @@ rewrite. Kept for archaeology.
       (worked, but only for script-created compose windows)
 - [x] v0.2 — Accessibility engine: real ⌘N/reply/forward windows,
       every compose window tracked independently
+- [x] v0.3 — event-driven engine (AXObserver): instant reaction to From
+      changes and new windows, polling demoted to a fallback safety net
 - [ ] Settings window (edit mappings in UI, read signature list from Mail)
 - [ ] Launch at login
 - [ ] App bundle + notarization for distribution

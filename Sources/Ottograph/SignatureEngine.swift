@@ -12,15 +12,20 @@ import Foundation
 /// Signature popup (settable). This also means Ottograph needs only the
 /// Accessibility permission — no Apple events, no Automation prompt.
 ///
-/// Design notes:
-/// - Acts only when a window's sender *changes* (or the window is first
-///   seen), so a signature the user picks manually afterward is left alone.
-/// - Tracks every compose window independently.
+/// Architecture: event-driven with a polling fallback.
+/// - An AXObserver watches Mail for window creation and for value changes on
+///   each compose window's From popup, so reactions are immediate.
+/// - A timer still scans every `pollSeconds` as a safety net for anything
+///   events miss (sleep/wake, Mail relaunch, windows that finish building
+///   after their creation notification).
+/// - Both paths funnel into the same scan, which acts only when a window's
+///   sender *changes* (or the window is first seen), so a signature the user
+///   picks manually afterward is left alone.
 /// - Applying a signature means opening the Signature popup's menu, which
 ///   macOS refuses to do while another menu (e.g. the From popup the user
-///   just clicked) is open. Failed attempts are therefore retried on
-///   subsequent ticks instead of being abandoned.
-/// - Never launches Mail; polling is skipped unless Mail is already running.
+///   just clicked) is open. Failed attempts are retried shortly after
+///   instead of being abandoned.
+/// - Never launches Mail; scanning is skipped unless Mail is already running.
 final class SignatureEngine {
     private let store: ConfigStore
     private var timer: Timer?
@@ -28,6 +33,7 @@ final class SignatureEngine {
     private var retryState: [AXElementKey: (email: String, attempts: Int)] = [:]
     private var axApp: AXUIElement?
     private var axAppPID: pid_t = -1
+    private var observer: AXObserver?
 
     private static let maxApplyAttempts = 4
 
@@ -40,6 +46,10 @@ final class SignatureEngine {
         self.store = store
     }
 
+    deinit {
+        teardownObserver()
+    }
+
     func start() {
         guard !isRunning else { return }
         isRunning = true
@@ -49,13 +59,17 @@ final class SignatureEngine {
             onStatus?("Watching Mail")
         }
         scheduleTimer()
+        tick()
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
+        teardownObserver()
         lastSenderByWindow.removeAll()
         retryState.removeAll()
+        axApp = nil
+        axAppPID = -1
         isRunning = false
         onStatus?("Paused")
     }
@@ -77,9 +91,68 @@ final class SignatureEngine {
         self.timer = timer
     }
 
-    // MARK: - Poll loop
+    // MARK: - AX notifications (the event-driven path)
+
+    fileprivate func handleNotification(_ name: String) {
+        switch name {
+        case kAXWindowCreatedNotification:
+            // A compose window's popups can finish building after the
+            // notification, so scan a few times as it settles.
+            scheduleScan(after: 0.3)
+            scheduleScan(after: 0.8)
+            scheduleScan(after: 1.5)
+        case kAXValueChangedNotification:
+            // The From popup of some compose window changed. Don't react
+            // instantly: Mail resets the Signature popup itself shortly
+            // after a From change, and applying before that reset lands
+            // means our work gets stomped and retried — a double blink.
+            // ~300ms lets Mail settle so we apply exactly once.
+            scheduleScan(after: 0.3)
+        default:
+            break
+        }
+    }
+
+    private func scheduleScan(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.tick()
+        }
+    }
+
+    private func ensureObserver(for pid: pid_t) {
+        guard observer == nil else { return }
+        var created: AXObserver?
+        guard AXObserverCreate(pid, ottographAXCallback, &created) == .success,
+              let created else { return }
+        observer = created
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        if let axApp {
+            AXObserverAddNotification(created, axApp, kAXWindowCreatedNotification as CFString, refcon)
+        }
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
+    }
+
+    private func teardownObserver() {
+        if let observer {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
+        observer = nil
+    }
+
+    /// Subscribes to value changes on a compose window's From popup so alias
+    /// switches are handled the moment they happen. Re-registration of an
+    /// already-observed element is a harmless no-op error.
+    private func observeFromPopup(_ popup: AXUIElement) {
+        guard let observer else { return }
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        AXObserverAddNotification(observer, popup, kAXValueChangedNotification as CFString, refcon)
+    }
+
+    // MARK: - Scan (shared by timer and events)
 
     private func tick() {
+        guard isRunning else { return }
+
         if store.reloadIfChanged() {
             scheduleTimer() // pick up a changed pollSeconds
             onStatus?("Config reloaded")
@@ -89,6 +162,7 @@ final class SignatureEngine {
             .runningApplications(withBundleIdentifier: "com.apple.mail").first else {
             lastSenderByWindow.removeAll()
             retryState.removeAll()
+            teardownObserver()
             axApp = nil
             axAppPID = -1
             return
@@ -99,11 +173,14 @@ final class SignatureEngine {
         }
 
         if axApp == nil || axAppPID != mail.processIdentifier {
+            teardownObserver()
             axApp = AXUIElementCreateApplication(mail.processIdentifier)
             axAppPID = mail.processIdentifier
             lastSenderByWindow.removeAll()
             retryState.removeAll()
         }
+        ensureObserver(for: mail.processIdentifier)
+
         guard let axApp,
               let windows = AX.attribute(axApp, kAXWindowsAttribute) as? [AnyObject] else { return }
 
@@ -116,6 +193,7 @@ final class SignatureEngine {
 
             let key = AXElementKey(element: window)
             seenWindows.insert(key)
+            observeFromPopup(compose.from)
 
             guard let senderValue = AX.stringValue(of: compose.from),
                   let email = Self.emailAddress(in: senderValue)?.lowercased() else { continue }
@@ -131,10 +209,13 @@ final class SignatureEngine {
 
             // If the user has the From popup's menu open right now (mid-
             // switch), opening the Signature menu would fail — macOS allows
-            // one open menu at a time. Try again next tick.
-            if openMenu(of: compose.from) != nil { continue }
+            // one open menu at a time. Try again shortly.
+            if openMenu(of: compose.from) != nil {
+                scheduleScan(after: 0.35)
+                continue
+            }
 
-            switch apply(signatureName: signatureName, to: compose.signature, forEmail: email) {
+            switch apply(signatureName: signatureName, to: compose.signature, in: window, forEmail: email) {
             case .applied, .giveUp:
                 lastSenderByWindow[key] = email
                 retryState[key] = nil
@@ -148,9 +229,10 @@ final class SignatureEngine {
                     onStatus?("Gave up applying signature for \(email)")
                     log("Gave up applying signature for \(email) after \(state.attempts) attempts")
                 } else {
-                    // Leave lastSenderByWindow unchanged so the next tick
+                    // Leave lastSenderByWindow unchanged so the next scan
                     // sees the same sender "change" and tries again.
                     retryState[key] = state
+                    scheduleScan(after: 0.35)
                 }
             }
         }
@@ -216,7 +298,7 @@ final class SignatureEngine {
 
     private enum ApplyResult {
         case applied
-        case retry   // transient failure — try again on a later tick
+        case retry   // transient failure — try again shortly
         case giveUp  // permanent failure — e.g. signature not in this menu
     }
 
@@ -224,7 +306,7 @@ final class SignatureEngine {
         AX.children(of: popup).first { AX.role(of: $0) == "AXMenu" }
     }
 
-    private func apply(signatureName: String, to popup: AXUIElement, forEmail email: String) -> ApplyResult {
+    private func apply(signatureName: String, to popup: AXUIElement, in window: AXUIElement, forEmail email: String) -> ApplyResult {
         // Empty string in the config means "no signature" — Mail's popup
         // calls that item "None".
         let target = signatureName.isEmpty ? "None" : signatureName
@@ -267,14 +349,27 @@ final class SignatureEngine {
         AX.press(item)
 
         // Confirm the selection actually took before declaring victory.
+        // Applying a signature makes Mail rebuild part of the compose
+        // header, which can leave our held popup reference stale and
+        // reading a phantom old value — so on a mismatch, re-discover the
+        // popup and trust only a *fresh* read. Retrying on the stale read
+        // caused a redundant second menu blink on every From change.
         usleep(150_000)
         if AX.stringValue(of: popup) == target {
             log("Applied '\(target)' for \(email)")
             onStatus?("Applied '\(target)' for \(email)")
             return .applied
         }
-        onStatus?("Signature didn't take — retrying")
-        return .retry
+        if let freshValue = composePopups(in: window).map({ AX.stringValue(of: $0.signature) }),
+           freshValue != nil, freshValue != target {
+            onStatus?("Signature didn't take — retrying")
+            return .retry
+        }
+        // Fresh read matches (or the window is mid-rebuild): the press on a
+        // found menu item almost certainly landed. Don't blink again.
+        log("Applied '\(target)' for \(email)")
+        onStatus?("Applied '\(target)' for \(email)")
+        return .applied
     }
 
     // MARK: - Helpers
@@ -293,4 +388,11 @@ final class SignatureEngine {
         let stamp = ISO8601DateFormatter().string(from: Date())
         print("[\(stamp)] \(message)")
     }
+}
+
+/// C callback for AXObserver — context comes back through refcon.
+private let ottographAXCallback: AXObserverCallback = { _, _, notification, refcon in
+    guard let refcon else { return }
+    let engine = Unmanaged<SignatureEngine>.fromOpaque(refcon).takeUnretainedValue()
+    engine.handleNotification(notification as String)
 }
