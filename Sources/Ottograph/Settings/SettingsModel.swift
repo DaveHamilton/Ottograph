@@ -17,6 +17,7 @@ final class SettingsModel {
     var rows: [Row] = []
     var pollSeconds: Double = 1.0
     var sendDelaySeconds: Double = 120
+    var takeOverSend = false
     var signatureNames: [String] = []
     var signatureLoadStatus = ""
     var saveStatus = ""
@@ -48,6 +49,7 @@ final class SettingsModel {
         }
         pollSeconds = config.pollSeconds
         sendDelaySeconds = config.sendDelay
+        takeOverSend = config.takeOverSend
         saveStatus = ""
     }
 
@@ -78,7 +80,8 @@ final class SettingsModel {
             pollSeconds: max(0.25, pollSeconds),
             signatures: signatures,
             autoCc: autoCc.isEmpty ? nil : autoCc,
-            sendDelaySeconds: sendDelaySeconds
+            sendDelaySeconds: sendDelaySeconds,
+            takeOverSendShortcut: takeOverSend
         )
         do {
             try store.save(newConfig)

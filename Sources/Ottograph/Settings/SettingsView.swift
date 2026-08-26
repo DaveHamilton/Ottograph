@@ -55,6 +55,16 @@ struct SettingsView: View {
                 }
             }
 
+            Toggle(isOn: $model.takeOverSend) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Take over Mail's Send shortcut (⇧⌘D)")
+                    Text("While Mail is frontmost, ⇧⌘D triggers delayed send instead of sending immediately. ⌃⌥⌘S always works; Send in the toolbar and Message menu still sends now.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             Divider()
 
             HStack {

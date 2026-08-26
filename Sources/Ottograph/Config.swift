@@ -17,7 +17,12 @@ struct Config: Codable {
     /// Delay for the "Send in N minutes" action (seconds). Default 120.
     var sendDelaySeconds: Double?
 
+    /// When true, Ottograph also claims Mail's ⇧⌘D (Send) shortcut while
+    /// Mail is frontmost and routes it to delayed send. Default false.
+    var takeOverSendShortcut: Bool?
+
     var sendDelay: TimeInterval { max(10, sendDelaySeconds ?? 120) }
+    var takeOverSend: Bool { takeOverSendShortcut ?? false }
 
     static let defaultConfig = Config(
         pollSeconds: 1.0,
@@ -28,7 +33,8 @@ struct Config: Codable {
         autoCc: [
             "feedback@example.com": "you@example.com",
         ],
-        sendDelaySeconds: 120
+        sendDelaySeconds: 120,
+        takeOverSendShortcut: false
     )
 }
 
@@ -91,7 +97,8 @@ final class ConfigStore {
             pollSeconds: max(0.25, parsed.pollSeconds),
             signatures: normalized,
             autoCc: normalizedCc,
-            sendDelaySeconds: parsed.sendDelaySeconds
+            sendDelaySeconds: parsed.sendDelaySeconds,
+            takeOverSendShortcut: parsed.takeOverSendShortcut
         )
         return true
     }

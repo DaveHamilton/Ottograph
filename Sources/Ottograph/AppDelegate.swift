@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var loginMenuItem: NSMenuItem?
     private var sendDelayedItem: NSMenuItem?
     private var hotKey: HotKey?
+    private var sendTakeoverHotKey: HotKey?
     private var settingsController: SettingsWindowController?
 
     /// SMAppService (login items) only works from a real .app bundle,
@@ -54,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.onStatus = { [weak self] status in
             self?.statusMenuItem.title = status
             self?.sendDelayedItem?.title = self?.sendDelayedTitle ?? "Send Delayed"
+            self?.updateSendTakeover() // config may have hot-reloaded
         }
         engine.start()
 
@@ -63,6 +65,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             carbonModifiers: UInt32(cmdKey | optionKey | controlKey)
         ) { [weak self] in
             self?.sendDelayed()
+        }
+
+        // Optional ⇧⌘D takeover: registered only while Mail is frontmost so
+        // Mail's Send shortcut routes to delayed send without stealing ⇧⌘D
+        // from any other app.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(frontAppChanged),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        updateSendTakeover()
+    }
+
+    @objc private func frontAppChanged(_ notification: Notification) {
+        updateSendTakeover()
+    }
+
+    private func updateSendTakeover() {
+        let mailIsFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.mail"
+        if store.config.takeOverSend && mailIsFront {
+            guard sendTakeoverHotKey == nil else { return }
+            sendTakeoverHotKey = HotKey(
+                keyCode: UInt32(kVK_ANSI_D),
+                carbonModifiers: UInt32(cmdKey | shiftKey)
+            ) { [weak self] in
+                self?.sendDelayed()
+            }
+        } else {
+            sendTakeoverHotKey = nil
         }
     }
 
