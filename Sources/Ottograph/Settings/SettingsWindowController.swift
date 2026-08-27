@@ -25,11 +25,16 @@ final class SettingsWindowController: NSWindowController {
         fatalError("not used")
     }
 
-    /// Re-reads the config so a reopened window shows current state.
+    /// Re-reads the config so a reopened window shows current state, then
+    /// refreshes the pickable lists from Mail (deferred so the window is
+    /// on screen before any Automation permission prompt appears).
     func show() {
         model.load()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        Task { @MainActor [model] in
+            model.refreshFromMail()
+        }
     }
 }

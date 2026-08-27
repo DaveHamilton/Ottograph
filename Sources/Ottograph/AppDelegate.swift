@@ -39,8 +39,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(sendItem)
         sendDelayedItem = sendItem
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "Open Config File", action: #selector(openConfig), keyEquivalent: "o").target = self
-        menu.addItem(withTitle: "Reload Config", action: #selector(reloadConfig), keyEquivalent: "r").target = self
         if isBundledApp {
             let item = NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
             item.target = self
@@ -51,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Ottograph", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
+        installEditMenu()
 
         engine.onStatus = { [weak self] status in
             self?.statusMenuItem.title = status
@@ -147,12 +146,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController?.show()
     }
 
-    @objc private func openConfig() {
-        NSWorkspace.shared.open(ConfigStore.fileURL)
-    }
+    /// An accessory (menu bar only) app has no menu bar of its own, so
+    /// nothing supplies the standard Edit-menu key equivalents and text
+    /// fields in the Settings window can't cut/copy/paste/undo. Installing
+    /// a main menu fixes that: it stays invisible under this activation
+    /// policy, but its key equivalents are still dispatched down the
+    /// responder chain.
+    private func installEditMenu() {
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
-    @objc private func reloadConfig() {
-        store.reloadIfChanged(force: true)
-        statusMenuItem.title = "Config reloaded"
+        let editItem = NSMenuItem()
+        editItem.submenu = editMenu
+        let mainMenu = NSMenu()
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
     }
 }

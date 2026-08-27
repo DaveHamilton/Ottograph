@@ -14,7 +14,12 @@ struct SettingsView: View {
 
             List {
                 ForEach($model.rows) { $row in
-                    MappingRowView(row: $row, signatureNames: model.signatureNames) {
+                    MappingRowView(
+                        row: $row,
+                        signatureNames: model.signatureNames,
+                        aliasChoices: model.aliasChoices(for: row.id),
+                        ccChoices: model.emailAddresses
+                    ) {
                         model.removeRow(id: row.id)
                     }
                     .listRowSeparator(.hidden)
@@ -25,8 +30,7 @@ struct SettingsView: View {
 
             HStack {
                 Button("Add Mapping", systemImage: "plus", action: model.addRow)
-                Button("Load Signature Names from Mail", action: model.loadSignaturesFromMail)
-                Text(model.signatureLoadStatus)
+                Text(model.mailLoadStatus)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Spacer()

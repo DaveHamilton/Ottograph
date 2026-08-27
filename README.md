@@ -64,9 +64,15 @@ First run:
 1. macOS will ask for the Accessibility permission
    (System Settings → Privacy & Security → Accessibility). Approve it once —
    the signed bundle's identity is stable across rebuilds.
-2. A default config is created at
-   `~/Library/Application Support/Ottograph/config.json`. Edit it
-   (menu bar icon → Open Config File) to map your aliases:
+2. Open **Settings…** from the menu bar icon and map your aliases. With Mail
+   running, both the address and signature columns come pre-filled with
+   pickers of your real addresses and signature names — reading those uses
+   Apple events, so macOS asks once for Automation permission (decline and
+   the fields simply stay free-text). Addresses already mapped are filtered
+   out of other rows' pickers.
+
+Settings writes `~/Library/Application Support/Ottograph/config.json`, which
+you can also edit by hand — the engine picks up changes automatically:
 
 ```json
 {
@@ -85,11 +91,6 @@ Keys are From addresses (case-insensitive); values are signature **names
 exactly as they appear** in Mail → Settings → Signatures. An empty string
 value selects "None" for that alias. Config changes are picked up
 automatically — no restart needed.
-
-Prefer a UI? Menu bar → **Settings…** (⌘,) edits all of this in a window,
-and its "Load Signature Names from Mail" button makes the signature column
-pickable (that one convenience uses Apple events, so macOS asks once for
-Automation permission; everything else remains pure Accessibility).
 
 `autoCc` (optional) maps a From alias to an address that gets added to the
 Cc field whenever that alias is selected — e.g. auto-cc yourself on mail
@@ -139,8 +140,11 @@ rewrite. Kept for archaeology.
       window via Mail's native Send Later, for a regret window beyond
       Undo Send's 30-second cap
 - [x] v0.7 — Settings window (menu bar → Settings…): edit alias mappings,
-      auto-Cc, and timing in a UI; optionally loads your signature names
-      from Mail (one-time Automation permission) so they're pickable
+      auto-Cc, and timing in a UI
+- [x] v0.9.1 — Settings polish: addresses and signature names load from Mail
+      automatically when the window opens, both columns are pickable,
+      already-mapped addresses are filtered out, and the standard Edit-menu
+      shortcuts (cut/copy/paste/undo) work in the fields
 - [ ] App icon
 - [ ] Notarized distribution build (Developer ID + hardened runtime)
 - [ ] Localization-proof popup detection (currently matches English

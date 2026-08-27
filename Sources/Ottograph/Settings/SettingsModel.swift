@@ -19,7 +19,8 @@ final class SettingsModel {
     var sendDelaySeconds: Double = 120
     var takeOverSend = false
     var signatureNames: [String] = []
-    var signatureLoadStatus = ""
+    var emailAddresses: [String] = []
+    var mailLoadStatus = ""
     var saveStatus = ""
 
     /// Called after a successful save so the app can refresh menu titles.
@@ -57,6 +58,18 @@ final class SettingsModel {
         rows.append(Row())
     }
 
+    /// Addresses offered in a row's alias picker: everything from Mail
+    /// except aliases already claimed by *other* rows. (The auto-Cc picker
+    /// stays unfiltered — the same address can be cc'd from many aliases.)
+    func aliasChoices(for rowID: Row.ID) -> [String] {
+        let taken = Set(
+            rows.filter { $0.id != rowID }
+                .map { $0.alias.trimmingCharacters(in: .whitespaces).lowercased() }
+                .filter { !$0.isEmpty }
+        )
+        return emailAddresses.filter { !taken.contains($0.lowercased()) }
+    }
+
     func removeRow(id: Row.ID) {
         rows.removeAll { $0.id == id }
     }
@@ -64,9 +77,12 @@ final class SettingsModel {
     func save() {
         var signatures: [String: String] = [:]
         var autoCc: [String: String] = [:]
+        var seenAliases = Set<String>()
+        var duplicates = Set<String>()
         for row in rows {
             let alias = row.alias.trimmingCharacters(in: .whitespaces).lowercased()
             guard !alias.isEmpty else { continue }
+            if !seenAliases.insert(alias).inserted { duplicates.insert(alias) }
             let signature = row.signature.trimmingCharacters(in: .whitespaces)
             if !signature.isEmpty {
                 signatures[alias] = signature == "None" ? "" : signature
@@ -85,45 +101,30 @@ final class SettingsModel {
         )
         do {
             try store.save(newConfig)
-            saveStatus = "Saved — Ottograph is using the new settings"
+            saveStatus = duplicates.isEmpty
+                ? "Saved — Ottograph is using the new settings"
+                : "Saved, but \(duplicates.sorted().joined(separator: ", ")) appeared more than once — only the last row for each was kept"
             onSaved?()
+            load() // collapse any duplicate rows to what was actually saved
         } catch {
             saveStatus = "Save failed: \(error.localizedDescription)"
         }
     }
 
-    /// Reads signature names from Mail via Apple events. Optional
-    /// convenience: needs the one-time Automation permission, and Mail
-    /// must already be running (this never launches it).
-    func loadSignaturesFromMail() {
-        guard !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.mail").isEmpty else {
-            signatureLoadStatus = "Open Mail first"
-            return
+    /// Pulls signature names and account addresses from Mail so both
+    /// columns are pickable. Runs whenever the window opens; failures are
+    /// non-fatal — the fields stay free-text.
+    func refreshFromMail() {
+        do {
+            signatureNames = try MailIntrospection.signatureNames()
+            emailAddresses = try MailIntrospection.accountAddresses()
+            mailLoadStatus = "\(emailAddresses.count) addresses, \(signatureNames.count) signatures from Mail"
+        } catch MailIntrospection.Failure.mailNotRunning {
+            mailLoadStatus = "Open Mail and reopen Settings to pick from your addresses and signatures"
+        } catch MailIntrospection.Failure.notAuthorized {
+            mailLoadStatus = "Allow Ottograph → Mail in System Settings → Privacy & Security → Automation to pick from lists"
+        } catch {
+            mailLoadStatus = "Couldn't read Mail's addresses and signatures"
         }
-        guard let script = NSAppleScript(source: #"tell application "Mail" to get name of every signature"#) else {
-            return
-        }
-        var errorInfo: NSDictionary?
-        let result = script.executeAndReturnError(&errorInfo)
-        if let errorInfo {
-            let code = errorInfo[NSAppleScript.errorNumber] as? Int ?? 0
-            signatureLoadStatus = code == -1743
-                ? "Allow Ottograph → Mail in System Settings → Privacy & Security → Automation"
-                : "Couldn't read signatures (error \(code))"
-            return
-        }
-        var names: [String] = []
-        var seen = Set<String>()
-        if result.numberOfItems > 0 {
-            for index in 1...result.numberOfItems {
-                if let name = result.atIndex(index)?.stringValue, seen.insert(name).inserted {
-                    names.append(name)
-                }
-            }
-        } else if let single = result.stringValue, !single.isEmpty {
-            names = [single]
-        }
-        signatureNames = names.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
-        signatureLoadStatus = "\(signatureNames.count) signature\(signatureNames.count == 1 ? "" : "s") loaded"
     }
 }
