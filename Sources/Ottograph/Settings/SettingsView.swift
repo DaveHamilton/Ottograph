@@ -105,10 +105,16 @@ struct SettingsView: View {
 
             Divider()
 
-            Text(statusLine)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline) {
+                Text(statusLine)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 12)
+                Text(versionLine)
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .padding(16)
         .frame(minWidth: 680, minHeight: 560)
@@ -127,5 +133,15 @@ struct SettingsView: View {
         return model.loginItemSupported
             ? "Changes are saved as you make them."
             : "Changes are saved as you make them. Start at login needs Ottograph installed as an app (Scripts/build-app.sh --install)."
+    }
+
+    /// Only a bundled build has an Info.plist to read a version out of.
+    /// `swift run` says so rather than showing a blank or inventing one —
+    /// and knowing which of the two you're looking at matters when a bug
+    /// report says "latest".
+    private var versionLine: String {
+        guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        else { return "Ottograph — dev build" }
+        return "Ottograph \(version)"
     }
 }
