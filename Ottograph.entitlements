@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Under the hardened runtime (required for notarization) an app may not
+	  send Apple events without this entitlement. Ottograph needs it for one
+	  thing only: reading your signature names and account addresses out of
+	  Mail so Settings can offer them as pickers (MailIntrospection).
+
+	  The engine itself uses the Accessibility API, which is gated by user
+	  consent rather than an entitlement — and which is also why Ottograph
+	  can never be sandboxed or sold through the Mac App Store.
+	-->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>

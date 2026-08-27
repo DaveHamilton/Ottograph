@@ -1,7 +1,15 @@
 #!/bin/zsh
 # Builds Ottograph.app from the SPM release build.
-# Usage: Scripts/build-app.sh [--install]
-#   --install  also copies the bundle to ~/Applications
+# Usage: Scripts/build-app.sh [--install] [--universal]
+#   --install    also copy the bundle to ~/Applications
+#   --universal  build a universal (arm64 + x86_64) binary — slower, and
+#                what release.sh uses so Intel Macs can run it too
+#
+# Every build is signed with the best identity available (Developer ID
+# first) under the hardened runtime, which notarization requires. Signing
+# local and distribution builds the same way means they share one code
+# signature identity, so macOS treats them as the same app and you grant
+# Accessibility once rather than after every switch.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -9,11 +17,28 @@ VERSION="0.11.0"
 BUNDLE_ID="com.davehamilton.Ottograph"
 APP="dist/Ottograph.app"
 
-swift build -c release
+INSTALL=0
+UNIVERSAL=0
+for arg in "$@"; do
+	case "$arg" in
+		--install) INSTALL=1 ;;
+		--universal) UNIVERSAL=1 ;;
+		*) echo "unknown option: $arg" >&2; exit 2 ;;
+	esac
+done
+
+if (( UNIVERSAL )); then
+	swift build -c release --arch arm64 --arch x86_64
+	BINARY=".build/apple/Products/Release/Ottograph"
+else
+	swift build -c release
+	BINARY=".build/release/Ottograph"
+fi
+[[ -f "$BINARY" ]] || { echo "build product not found at $BINARY" >&2; exit 1; }
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/Ottograph "$APP/Contents/MacOS/Ottograph"
+cp "$BINARY" "$APP/Contents/MacOS/Ottograph"
 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 if [[ -f Assets/menubar-template.png ]]; then
 	cp Assets/menubar-template.png "$APP/Contents/Resources/menubar-template.png"
@@ -51,27 +76,35 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Ottograph reads your signature names from Mail so Settings can offer them as choices.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Dave Hamilton</string>
+	<string>© 2026 Dave The Nerd, LLC</string>
 </dict>
 </plist>
 PLIST
 
-# Prefer a real signing identity (stable designated requirement means the
-# Accessibility grant survives rebuilds); fall back to ad-hoc.
 IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-	| awk -F'"' '/Developer ID Application|Apple Development/{print $2; exit}')
-if [[ -n "${IDENTITY}" ]]; then
-	echo "Signing with: ${IDENTITY}"
-	codesign --force --sign "${IDENTITY}" "$APP"
-else
-	echo "No signing identity found — ad-hoc signing (Accessibility grant will reset on each rebuild)"
-	codesign --force --sign - "$APP"
+	| awk -F'"' '/Developer ID Application/{print $2; exit}')
+if [[ -z "${IDENTITY}" ]]; then
+	IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+		| awk -F'"' '/Apple Development/{print $2; exit}')
 fi
 
-codesign --verify --strict "$APP"
-echo "Built ${APP} (v${VERSION})"
+if [[ -n "${IDENTITY}" ]]; then
+	echo "Signing with: ${IDENTITY}"
+	# --timestamp and --options runtime are both required by notarization.
+	codesign --force --sign "${IDENTITY}" \
+		--options runtime \
+		--timestamp \
+		--entitlements Ottograph.entitlements \
+		"$APP"
+else
+	echo "No signing identity found — ad-hoc signing (not distributable; Accessibility grant resets each rebuild)"
+	codesign --force --sign - --entitlements Ottograph.entitlements "$APP"
+fi
 
-if [[ "${1:-}" == "--install" ]]; then
+codesign --verify --strict --verbose=2 "$APP"
+echo "Built ${APP} (v${VERSION}, $(lipo -archs "$APP/Contents/MacOS/Ottograph"))"
+
+if (( INSTALL )); then
 	mkdir -p ~/Applications
 	rm -rf ~/Applications/Ottograph.app
 	cp -R "$APP" ~/Applications/

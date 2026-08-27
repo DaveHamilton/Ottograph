@@ -145,6 +145,24 @@ proof of concept. It still works — but only on *script-created* compose
 windows, which is exactly the limitation that forced the Accessibility
 rewrite. Kept for archaeology.
 
+## Distribution
+
+Ottograph can never ship on the Mac App Store: App Store apps must be
+sandboxed, and the Accessibility write API it depends on (setting Mail's
+Signature popup and Cc field) does not work inside the sandbox at all. That
+also rules out TestFlight, which distributes through App Store Connect. Like
+every other app in this category, it ships directly.
+
+`Scripts/release.sh` does the whole thing: universal build, Developer ID
+signing under the hardened runtime, notarization, stapling, a Gatekeeper
+check, and a signed + notarized DMG. One-time setup is storing notary
+credentials in the keychain — see the comment block at the top of that
+script for both auth options.
+
+Every build (local ones too) is signed with the same Developer ID identity
+under the hardened runtime, so macOS treats development and release builds
+as the same app and the Accessibility grant carries across them.
+
 ## Project status / roadmap
 
 - [x] v0.1 — menu bar app, JSON config, AppleScript engine
