@@ -199,6 +199,11 @@ as the same app and the Accessibility grant carries across them.
       Undo Send's 30-second cap
 - [x] v0.7 — Settings window (menu bar → Settings…): edit alias mappings,
       auto-Cc, and timing in a UI
+- [x] v0.8 — app icon and mascot art, with `Scripts/make-icon.sh` masking the
+      artwork into the macOS squircle; the menu bar gets a matching monochrome
+      template glyph
+- [x] v0.9 — optional takeover of Mail's ⇧⌘D, so muscle memory gets the
+      delayed-send window too (claimed only while Mail is frontmost)
 - [x] v0.9.1 — Settings polish: addresses and signature names load from Mail
       automatically when the window opens, both columns are pickable,
       already-mapped addresses are filtered out, and the standard Edit-menu
@@ -208,10 +213,13 @@ as the same app and the Accessibility grant carries across them.
       menu bar glyph while paused
 - [x] v0.11 — Settings apply immediately; the Save and Revert buttons are
       gone, so every control behaves the same way
-- [ ] App icon
-- [ ] Notarized distribution build (Developer ID + hardened runtime)
+- [x] Distribution — universal (Apple Silicon + Intel) build, Developer ID
+      signing under the hardened runtime, notarized and stapled DMG, all via
+      `Scripts/release.sh`
+- [ ] Auto-updates (Sparkle), so new versions don't mean a manual re-download
 - [ ] Localization-proof popup detection (currently matches English
       "From"/"Signature" labels with value-based fallbacks)
+- [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27
 
 ## Limitations
 
