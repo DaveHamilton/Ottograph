@@ -16,6 +16,29 @@ it — instantly, exactly as if you'd chosen it from the Signature popup yoursel
 > update can change what it's reaching for. Expect rough edges, and please
 > report anything odd rather than assuming it's you.
 
+## Install
+
+Download the latest **Ottograph.dmg** from
+[Releases](https://github.com/DaveHamilton/Ottograph/releases), open it, and
+drag Ottograph to Applications. It's signed and notarized, so it opens without
+a Gatekeeper warning. Requires **macOS 14 or later** and Apple Mail.
+
+On first launch:
+
+1. Ottograph lives in the **menu bar** (look for the ✒️ glyph) — it has no
+   Dock icon and no window, so nothing appearing on screen is expected.
+2. Grant **Accessibility** when macOS asks. This permission *is* the engine;
+   without it nothing happens. System Settings → Privacy & Security →
+   Accessibility.
+3. Menu bar icon → **Settings…** and add a mapping for each alias. With Mail
+   running, your addresses and signature names fill in as pickers — that part
+   asks once for Automation permission, and declining just leaves the fields
+   as free text.
+
+The signature you map has to exist in Mail → Settings → Signatures **and be
+attached to the account that owns the alias**, or it won't be available to
+apply. Building from source is covered in [Running it](#running-it).
+
 ## How it works
 
 Apple killed Mail plugins (macOS Sonoma) and the modern MailKit extension API

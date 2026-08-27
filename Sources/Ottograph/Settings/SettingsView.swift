@@ -17,25 +17,36 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            List {
-                ForEach($model.rows) { $row in
-                    MappingRowView(
-                        row: $row,
-                        signatureNames: model.signatureNames,
-                        aliasChoices: model.aliasChoices(for: row.id),
-                        ccChoices: model.emailAddresses,
-                        focused: $focused,
-                        onCommit: model.save,
-                        onDelete: {
-                            model.removeRow(id: row.id)
-                            model.save()
-                        }
-                    )
-                    .listRowSeparator(.hidden)
+            if model.rows.isEmpty {
+                ContentUnavailableView {
+                    Label("No aliases mapped yet", systemImage: "signature")
+                } description: {
+                    Text("Add a mapping for each From address that should get its own signature. With Mail running, your addresses and signature names appear as pickers.")
+                } actions: {
+                    Button("Add Mapping", systemImage: "plus", action: model.addRow)
                 }
+                .frame(minHeight: 180)
+            } else {
+                List {
+                    ForEach($model.rows) { $row in
+                        MappingRowView(
+                            row: $row,
+                            signatureNames: model.signatureNames,
+                            aliasChoices: model.aliasChoices(for: row.id),
+                            ccChoices: model.emailAddresses,
+                            focused: $focused,
+                            onCommit: model.save,
+                            onDelete: {
+                                model.removeRow(id: row.id)
+                                model.save()
+                            }
+                        )
+                        .listRowSeparator(.hidden)
+                    }
+                }
+                .listStyle(.bordered)
+                .frame(minHeight: 180)
             }
-            .listStyle(.bordered)
-            .frame(minHeight: 180)
 
             HStack {
                 Button("Add Mapping", systemImage: "plus", action: model.addRow)

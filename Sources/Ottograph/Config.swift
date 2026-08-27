@@ -35,15 +35,14 @@ struct Config: Codable {
     var notifyScheduled: Bool { notifyOnScheduledSend ?? false }
     var notifyFailures: Bool { notifyOnFailure ?? true }
 
+    /// A fresh install starts genuinely empty. Seeding example rows here
+    /// would show a first-time user three fake example.com mappings that
+    /// look like a bug — Settings shows an empty state and an invitation
+    /// instead.
     static let defaultConfig = Config(
         pollSeconds: 1.0,
-        signatures: [
-            "you@example.com": "Signature Name As It Appears In Mail Settings",
-            "alias@example.com": "Another Signature Name",
-        ],
-        autoCc: [
-            "feedback@example.com": "you@example.com",
-        ],
+        signatures: [:],
+        autoCc: nil,
         sendDelaySeconds: 120,
         takeOverSendShortcut: false,
         notifyOnScheduledSend: false,

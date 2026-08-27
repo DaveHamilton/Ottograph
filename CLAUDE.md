@@ -164,3 +164,29 @@ Guidelines that keep this honest:
   "Schedule"). Localization would need a different approach.
 - Commit messages: what changed and *why*, with the reasoning behind non-obvious
   fixes preserved.
+
+## Repo and release conventions
+
+This repo is **public** and MIT licensed. Keep it that way: no real email
+addresses, API keys, issuer IDs, or personal config in commits — use
+`example.com` in documentation and examples. The user's own config lives at
+`~/Library/Application Support/Ottograph/config.json` and is never committed.
+
+Releases go out as GitHub Release assets, never as commits:
+
+```bash
+# bump VERSION in Scripts/build-app.sh, then
+Scripts/release.sh
+gh release create vX.Y.Z dist/Ottograph-X.Y.Z.dmg --notes-file <notes>
+```
+
+**The default config must stay empty** (`Config.defaultConfig`). It used to
+seed example.com placeholder rows, which meant a first-time user opened
+Settings to three fake mappings that looked like a bug. Settings shows a
+`ContentUnavailableView` empty state instead — don't reintroduce sample data
+as a substitute for that.
+
+**Verify user-visible changes on a fresh install, not just your own.** Move
+`config.json` aside, relaunch, look at what a newcomer actually sees, then
+restore it — and diff the restored file against a backup to prove nothing
+drifted.
