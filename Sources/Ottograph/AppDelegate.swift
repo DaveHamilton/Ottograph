@@ -1,6 +1,5 @@
 import AppKit
 import Carbon.HIToolbox
-import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -9,17 +8,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var engine = SignatureEngine(store: store)
     private let statusMenuItem = NSMenuItem(title: "Starting…", action: nil, keyEquivalent: "")
     private let toggleMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
-    private var loginMenuItem: NSMenuItem?
     private var sendDelayedItem: NSMenuItem?
     private var hotKey: HotKey?
     private var sendTakeoverHotKey: HotKey?
     private var settingsController: SettingsWindowController?
-
-    /// SMAppService (login items) only works from a real .app bundle,
-    /// not when running the bare executable via `swift run`.
-    private var isBundledApp: Bool {
-        Bundle.main.bundlePath.hasSuffix(".app")
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -39,13 +31,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(sendItem)
         sendDelayedItem = sendItem
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        if isBundledApp {
-            let item = NSMenuItem(title: "Start at Login", action: #selector(toggleLoginItem), keyEquivalent: "")
-            item.target = self
-            item.state = SMAppService.mainApp.status == .enabled ? .on : .off
-            menu.addItem(item)
-            loginMenuItem = item
-        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Ottograph", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -56,6 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.sendDelayedItem?.title = self?.sendDelayedTitle ?? "Send Delayed"
             self?.updateSendTakeover() // config may have hot-reloaded
         }
+        engine.onFailure = { [weak self] message in
+            guard let self, self.store.config.notifyFailures else { return }
+            Notifier.post(title: "Ottograph", body: message)
+        }
+        Notifier.requestAuthorization()
         engine.start()
 
         // ⌃⌥⌘S — "send, but give me time to regret it"
@@ -106,9 +96,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func sendDelayed() {
-        DelayedSend.schedule(afterSeconds: store.config.sendDelay) { [weak self] status in
-            self?.statusMenuItem.title = status
-            print("[DelayedSend] \(status)")
+        DelayedSend.schedule(afterSeconds: store.config.sendDelay) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .scheduled(let when):
+                let formatter = DateFormatter()
+                formatter.timeStyle = .short
+                let time = formatter.string(from: when)
+                self.statusMenuItem.title = "Sending at \(time) — cancel in Send Later"
+                print("[DelayedSend] scheduled for \(time)")
+                if self.store.config.notifyScheduled {
+                    Notifier.post(
+                        title: "Scheduled, not sent",
+                        body: "Sending at \(time). Open Mail's Send Later mailbox to edit or cancel."
+                    )
+                }
+            case .failed(let message):
+                self.statusMenuItem.title = message
+                print("[DelayedSend] \(message)")
+                if self.store.config.notifyFailures {
+                    Notifier.post(title: "Ottograph couldn't schedule that message", body: message)
+                }
+            }
         }
     }
 
@@ -120,19 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             engine.start()
             toggleMenuItem.state = .on
         }
-    }
-
-    @objc private func toggleLoginItem() {
-        do {
-            if SMAppService.mainApp.status == .enabled {
-                try SMAppService.mainApp.unregister()
-            } else {
-                try SMAppService.mainApp.register()
-            }
-        } catch {
-            statusMenuItem.title = "Login item error: \(error.localizedDescription)"
-        }
-        loginMenuItem?.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        // A paused Ottograph should look paused, not merely act paused.
+        statusItem.button?.image = MenuBarIcon.make(paused: !engine.isRunning)
     }
 
     @objc private func showSettings() {

@@ -110,8 +110,25 @@ set it in the config). Until then the message sits in Mail's Send Later
 mailbox where you can open, edit, or delete it — a strictly better undo
 than Undo Send, and the schedule survives quitting Mail.
 
-Requires the Send Later button in the compose window's toolbar (it's there
-by default) and, like everything else here, English UI labels.
+Driven through `Message > Send Later > Send Later…`, so it doesn't depend on
+the compose toolbar's buttons — but like everything else here it matches
+English UI labels.
+
+Optionally, **Take over Mail's Send shortcut (⇧⌘D)** (Settings, off by
+default) routes Mail's own Send shortcut to delayed send while Mail is
+frontmost, so muscle memory gets the regret window too. The hot key is only
+registered while Mail is frontmost, so no other app loses ⇧⌘D. Send in the
+toolbar and the Message menu still send immediately.
+
+## Feedback and status
+
+The menu bar glyph is struck through while Ottograph is paused, so a paused
+app doesn't look like a working one. Ottograph notifies you when something
+actually fails (a mapped signature isn't available for that account, a
+delayed send couldn't be set up); routine work stays silent. A second,
+off-by-default option notifies you when a message is scheduled rather than
+sent — Mail's own Send Later sheet is usually feedback enough. Both are in
+Settings.
 
 Each mapped signature must appear in the compose window's Signature popup for
 the selected account — i.e., it must be attached to the account that owns the
@@ -145,6 +162,9 @@ rewrite. Kept for archaeology.
       automatically when the window opens, both columns are pickable,
       already-mapped addresses are filtered out, and the standard Edit-menu
       shortcuts (cut/copy/paste/undo) work in the fields
+- [x] v0.10 — UX pass: Start at Login moved into Settings, notifications for
+      failures (and optionally for scheduled sends), and a struck-through
+      menu bar glyph while paused
 - [ ] App icon
 - [ ] Notarized distribution build (Developer ID + hardened runtime)
 - [ ] Localization-proof popup detection (currently matches English

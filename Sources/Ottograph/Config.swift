@@ -21,8 +21,19 @@ struct Config: Codable {
     /// Mail is frontmost and routes it to delayed send. Default false.
     var takeOverSendShortcut: Bool?
 
+    /// Banner confirming a message was scheduled rather than sent. Default
+    /// false — Mail's own Send Later sheet is already visible feedback.
+    var notifyOnScheduledSend: Bool?
+
+    /// Banner when something actually fails (a signature isn't available,
+    /// a delayed send couldn't be set up). Default true, since the menu
+    /// bar status line is only visible if you open the menu.
+    var notifyOnFailure: Bool?
+
     var sendDelay: TimeInterval { max(10, sendDelaySeconds ?? 120) }
     var takeOverSend: Bool { takeOverSendShortcut ?? false }
+    var notifyScheduled: Bool { notifyOnScheduledSend ?? false }
+    var notifyFailures: Bool { notifyOnFailure ?? true }
 
     static let defaultConfig = Config(
         pollSeconds: 1.0,
@@ -34,7 +45,9 @@ struct Config: Codable {
             "feedback@example.com": "you@example.com",
         ],
         sendDelaySeconds: 120,
-        takeOverSendShortcut: false
+        takeOverSendShortcut: false,
+        notifyOnScheduledSend: false,
+        notifyOnFailure: true
     )
 }
 
@@ -98,7 +111,9 @@ final class ConfigStore {
             signatures: normalized,
             autoCc: normalizedCc,
             sendDelaySeconds: parsed.sendDelaySeconds,
-            takeOverSendShortcut: parsed.takeOverSendShortcut
+            takeOverSendShortcut: parsed.takeOverSendShortcut,
+            notifyOnScheduledSend: parsed.notifyOnScheduledSend,
+            notifyOnFailure: parsed.notifyOnFailure
         )
         return true
     }

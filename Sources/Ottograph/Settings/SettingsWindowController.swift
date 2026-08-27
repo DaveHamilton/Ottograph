@@ -15,7 +15,7 @@ final class SettingsWindowController: NSWindowController {
         let host = NSHostingController(rootView: SettingsView(model: model))
         let window = NSWindow(contentViewController: host)
         window.title = "Ottograph Settings"
-        window.setContentSize(NSSize(width: 720, height: 480))
+        window.setContentSize(NSSize(width: 720, height: 600))
         window.isReleasedWhenClosed = false
         super.init(window: window)
     }

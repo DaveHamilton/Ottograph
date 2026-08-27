@@ -18,6 +18,14 @@ final class SettingsModel {
     var pollSeconds: Double = 1.0
     var sendDelaySeconds: Double = 120
     var takeOverSend = false
+    var notifyScheduled = false
+    var notifyFailures = true
+
+    /// Not part of the config file — a system registration, so it applies
+    /// the moment it's toggled rather than waiting for Save.
+    var startAtLogin = false
+    var loginItemStatus = ""
+    let loginItemSupported = LoginItem.isSupported
     var signatureNames: [String] = []
     var emailAddresses: [String] = []
     var mailLoadStatus = ""
@@ -51,6 +59,10 @@ final class SettingsModel {
         pollSeconds = config.pollSeconds
         sendDelaySeconds = config.sendDelay
         takeOverSend = config.takeOverSend
+        notifyScheduled = config.notifyScheduled
+        notifyFailures = config.notifyFailures
+        startAtLogin = LoginItem.isEnabled
+        loginItemStatus = ""
         saveStatus = ""
     }
 
@@ -97,7 +109,9 @@ final class SettingsModel {
             signatures: signatures,
             autoCc: autoCc.isEmpty ? nil : autoCc,
             sendDelaySeconds: sendDelaySeconds,
-            takeOverSendShortcut: takeOverSend
+            takeOverSendShortcut: takeOverSend,
+            notifyOnScheduledSend: notifyScheduled,
+            notifyOnFailure: notifyFailures
         )
         do {
             try store.save(newConfig)
@@ -108,6 +122,18 @@ final class SettingsModel {
             load() // collapse any duplicate rows to what was actually saved
         } catch {
             saveStatus = "Save failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Applies the login-item toggle immediately (it isn't config data),
+    /// re-syncing the checkbox if the system refuses.
+    func applyLoginItem() {
+        do {
+            try LoginItem.set(startAtLogin)
+            loginItemStatus = ""
+        } catch {
+            loginItemStatus = "Couldn't change login item: \(error.localizedDescription)"
+            startAtLogin = LoginItem.isEnabled
         }
     }
 

@@ -69,6 +69,23 @@ struct SettingsView: View {
                 }
             }
 
+            Toggle("Notify when something goes wrong", isOn: $model.notifyFailures)
+            Toggle("Notify when a message is scheduled instead of sent", isOn: $model.notifyScheduled)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Toggle("Start Ottograph at login", isOn: $model.startAtLogin)
+                    .disabled(!model.loginItemSupported)
+                    .onChange(of: model.startAtLogin) {
+                        model.applyLoginItem()
+                    }
+                Text(loginItemNote)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Divider()
 
             HStack {
@@ -82,6 +99,15 @@ struct SettingsView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 680, minHeight: 440)
+        .frame(minWidth: 680, minHeight: 560)
+    }
+
+    /// Start at login is a system registration rather than a config value,
+    /// so unlike everything above it, it doesn't wait for Save.
+    private var loginItemNote: String {
+        if !model.loginItemStatus.isEmpty { return model.loginItemStatus }
+        return model.loginItemSupported
+            ? "Takes effect immediately — the settings above apply when you click Save."
+            : "Available once Ottograph is running as an installed app (Scripts/build-app.sh --install)."
     }
 }

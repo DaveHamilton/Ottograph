@@ -5,17 +5,51 @@ import AppKit
 /// icons must be templates so they adapt to dark mode and highlight state,
 /// which rules out the full-color app icon artwork.
 enum MenuBarIcon {
-    static func make() -> NSImage {
-        // Prefer the generated template artwork bundled with the app
-        // (Assets/nbp-menubar.png → menubar-template.png, 36px = 18pt @2x).
-        if let url = Bundle.main.url(forResource: "menubar-template", withExtension: "png"),
-           let bundled = NSImage(contentsOf: url) {
-            bundled.size = NSSize(width: 18, height: 18)
-            bundled.isTemplate = true
-            bundled.accessibilityDescription = "Ottograph"
-            return bundled
+    /// - Parameter paused: when true, the glyph is struck through, so a
+    ///   paused Ottograph doesn't look identical to a working one.
+    static func make(paused: Bool = false) -> NSImage {
+        let base = bundledGlyph() ?? drawn()
+        let image = paused ? struckThrough(base) : base
+        image.isTemplate = true
+        image.accessibilityDescription = paused ? "Ottograph (paused)" : "Ottograph"
+        return image
+    }
+
+    /// The generated template artwork bundled with the app
+    /// (Assets/nbp-menubar.png → menubar-template.png, 36px = 18pt @2x).
+    private static func bundledGlyph() -> NSImage? {
+        guard let url = Bundle.main.url(forResource: "menubar-template", withExtension: "png"),
+              let bundled = NSImage(contentsOf: url) else { return nil }
+        bundled.size = NSSize(width: 18, height: 18)
+        return bundled
+    }
+
+    /// Draws the glyph with a diagonal strike through it. The strike is
+    /// knocked out of the glyph with a small transparent gap on either
+    /// side, so the two shapes read as separate rather than merging into
+    /// one blob at menu bar size.
+    private static func struckThrough(_ base: NSImage) -> NSImage {
+        NSImage(size: base.size, flipped: false) { rect in
+            base.draw(in: rect)
+
+            let start = NSPoint(x: rect.minX + rect.width * 0.16, y: rect.minY + rect.height * 0.18)
+            let end = NSPoint(x: rect.maxX - rect.width * 0.16, y: rect.maxY - rect.height * 0.18)
+            let strike = NSBezierPath()
+            strike.move(to: start)
+            strike.line(to: end)
+            strike.lineCapStyle = .round
+
+            // Clear a slightly wider channel first, then stroke into it.
+            NSGraphicsContext.current?.compositingOperation = .clear
+            strike.lineWidth = rect.width * 0.21
+            strike.stroke()
+
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            NSColor.black.setStroke()
+            strike.lineWidth = rect.width * 0.1
+            strike.stroke()
+            return true
         }
-        return drawn()
     }
 
     /// Code-drawn fallback for bare `swift run` builds with no bundle.

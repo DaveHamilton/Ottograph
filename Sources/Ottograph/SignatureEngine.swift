@@ -43,6 +43,16 @@ final class SignatureEngine {
     /// Human-readable status for the menu bar UI.
     var onStatus: ((String) -> Void)?
 
+    /// Called only for genuine failures — something the user may need to
+    /// fix, as opposed to routine chatter or a transient retry that heals
+    /// itself. Wired to notifications, so it must stay quiet in normal use.
+    var onFailure: ((String) -> Void)?
+
+    private func report(_ message: String, failure: Bool = false) {
+        onStatus?(message)
+        if failure { onFailure?(message) }
+    }
+
     init(store: ConfigStore) {
         self.store = store
     }
@@ -55,7 +65,7 @@ final class SignatureEngine {
         guard !isRunning else { return }
         isRunning = true
         if !Self.ensureAccessibilityPermission() {
-            onStatus?("Accessibility permission needed (System Settings → Privacy & Security → Accessibility)")
+            report("Accessibility permission needed (System Settings → Privacy & Security → Accessibility)", failure: true)
         } else {
             onStatus?("Watching Mail")
         }
@@ -169,7 +179,7 @@ final class SignatureEngine {
             return
         }
         guard AXIsProcessTrusted() else {
-            onStatus?("Accessibility permission needed (System Settings → Privacy & Security → Accessibility)")
+            report("Accessibility permission needed (System Settings → Privacy & Security → Accessibility)", failure: true)
             return
         }
 
@@ -252,7 +262,7 @@ final class SignatureEngine {
                 if state.attempts >= Self.maxApplyAttempts {
                     lastSenderByWindow[key] = email
                     retryState[key] = nil
-                    onStatus?("Gave up applying signature for \(email)")
+                    report("Gave up applying signature for \(email)", failure: true)
                     log("Gave up applying signature for \(email) after \(state.attempts) attempts")
                 } else {
                     // Leave lastSenderByWindow unchanged so the next scan
@@ -376,7 +386,7 @@ final class SignatureEngine {
     /// it was.
     private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String) {
         guard let ccField = controls.cc else {
-            onStatus?("No Cc field found for \(email)")
+            report("No Cc field found for \(email)", failure: true)
             return
         }
 
@@ -400,7 +410,7 @@ final class SignatureEngine {
 
         let combined = (existingTokens + [want]).joined(separator: ", ")
         guard AXUIElementSetAttributeValue(ccField, kAXValueAttribute as CFString, combined as CFTypeRef) == .success else {
-            onStatus?("Couldn't set Cc for \(email)")
+            report("Couldn't set Cc for \(email)", failure: true)
             log("Couldn't set Cc \(address) for \(email)")
             return
         }
@@ -471,7 +481,7 @@ final class SignatureEngine {
         guard let item = AX.children(of: menu).first(where: { AX.title(of: $0) == target }) else {
             AX.cancel(menu)
             log("Signature '\(target)' not in popup for \(email) — is it attached to this account?")
-            onStatus?("'\(target)' not in Signature menu for \(email)")
+            report("'\(target)' not in Signature menu for \(email)", failure: true)
             return .giveUp
         }
 
