@@ -115,11 +115,12 @@ final class SettingsModel {
         )
         do {
             try store.save(newConfig)
+            // Deliberately no reload here: rows are sorted on load, and
+            // re-sorting mid-edit would make them jump around while typing.
             saveStatus = duplicates.isEmpty
-                ? "Saved — Ottograph is using the new settings"
-                : "Saved, but \(duplicates.sorted().joined(separator: ", ")) appeared more than once — only the last row for each was kept"
+                ? "Changes are saved as you make them."
+                : "\(duplicates.sorted().joined(separator: ", ")) is mapped more than once — only the last row for each counts."
             onSaved?()
-            load() // collapse any duplicate rows to what was actually saved
         } catch {
             saveStatus = "Save failed: \(error.localizedDescription)"
         }

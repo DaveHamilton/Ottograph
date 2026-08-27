@@ -135,10 +135,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showSettings() {
         if settingsController == nil {
+            // Settings saves continuously, so this only refreshes what the
+            // menu shows — it deliberately doesn't announce every save.
             settingsController = SettingsWindowController(store: store) { [weak self] in
                 guard let self else { return }
                 self.sendDelayedItem?.title = self.sendDelayedTitle
-                self.statusMenuItem.title = "Settings saved"
             }
         }
         settingsController?.show()

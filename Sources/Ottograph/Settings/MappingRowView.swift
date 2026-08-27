@@ -9,6 +9,10 @@ struct MappingRowView: View {
     let aliasChoices: [String]
     /// All of Mail's addresses — the same one may be cc'd from many aliases.
     let ccChoices: [String]
+    @FocusState.Binding var focused: SettingsField?
+    /// Called for discrete edits (picking from a menu, pressing Return)
+    /// that should save without waiting for focus to move.
+    let onCommit: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -17,7 +21,10 @@ struct MappingRowView: View {
                 text: $row.alias,
                 prompt: "alias@example.com",
                 choices: aliasChoices,
-                pickerLabel: "Choose address"
+                pickerLabel: "Choose address",
+                field: .alias(row.id),
+                focused: $focused,
+                onCommit: onCommit
             )
             .frame(minWidth: 190)
 
@@ -26,6 +33,9 @@ struct MappingRowView: View {
                 prompt: "Signature name",
                 choices: signatureNames,
                 pickerLabel: "Choose signature",
+                field: .signature(row.id),
+                focused: $focused,
+                onCommit: onCommit,
                 extraChoice: ("None (remove signature)", "None")
             )
             .frame(minWidth: 180)
@@ -34,7 +44,10 @@ struct MappingRowView: View {
                 text: $row.autoCc,
                 prompt: "Auto-Cc (optional)",
                 choices: ccChoices,
-                pickerLabel: "Choose Cc address"
+                pickerLabel: "Choose Cc address",
+                field: .autoCc(row.id),
+                focused: $focused,
+                onCommit: onCommit
             )
             .frame(minWidth: 170)
 
@@ -53,20 +66,25 @@ private struct PickableField: View {
     let prompt: String
     let choices: [String]
     let pickerLabel: String
+    let field: SettingsField
+    @FocusState.Binding var focused: SettingsField?
+    let onCommit: () -> Void
     var extraChoice: (label: String, value: String)?
 
     var body: some View {
         HStack(spacing: 2) {
             TextField(prompt, text: $text)
                 .textFieldStyle(.roundedBorder)
+                .focused($focused, equals: field)
+                .onSubmit(onCommit)
             if !choices.isEmpty || extraChoice != nil {
                 Menu {
                     if let extraChoice {
-                        Button(extraChoice.label) { text = extraChoice.value }
+                        Button(extraChoice.label) { select(extraChoice.value) }
                         Divider()
                     }
                     ForEach(choices, id: \.self) { choice in
-                        Button(choice) { text = choice }
+                        Button(choice) { select(choice) }
                     }
                 } label: {
                     Label(pickerLabel, systemImage: "chevron.up.chevron.down")
@@ -76,5 +94,10 @@ private struct PickableField: View {
                 .fixedSize()
             }
         }
+    }
+
+    private func select(_ value: String) {
+        text = value
+        onCommit()
     }
 }

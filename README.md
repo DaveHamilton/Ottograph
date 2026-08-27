@@ -71,8 +71,12 @@ First run:
    the fields simply stay free-text). Addresses already mapped are filtered
    out of other rows' pickers.
 
-Settings writes `~/Library/Application Support/Ottograph/config.json`, which
-you can also edit by hand — the engine picks up changes automatically:
+Settings has no Save button: toggles and picker choices apply on the spot,
+and text fields commit when you press Return, move focus, or close the
+window (never mid-keystroke, so a half-typed signature name is never written
+and can't be reported as a failure). It writes
+`~/Library/Application Support/Ottograph/config.json`, which you can also
+edit by hand — the engine picks up changes either way:
 
 ```json
 {
@@ -165,6 +169,8 @@ rewrite. Kept for archaeology.
 - [x] v0.10 — UX pass: Start at Login moved into Settings, notifications for
       failures (and optionally for scheduled sends), and a struck-through
       menu bar glyph while paused
+- [x] v0.11 — Settings apply immediately; the Save and Revert buttons are
+      gone, so every control behaves the same way
 - [ ] App icon
 - [ ] Notarized distribution build (Developer ID + hardened runtime)
 - [ ] Localization-proof popup detection (currently matches English

@@ -76,11 +76,13 @@ final class ConfigStore {
     }
 
     /// Writes a new config to disk (the engine hot-reloads it) and adopts
-    /// it immediately.
+    /// it immediately. Settings saves on every committed edit, so identical
+    /// writes are skipped to avoid churning the engine's reload.
     func save(_ newConfig: Config) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(newConfig)
+        if let existing = try? Data(contentsOf: Self.fileURL), existing == data { return }
         try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
         try data.write(to: Self.fileURL)
         reloadIfChanged(force: true)

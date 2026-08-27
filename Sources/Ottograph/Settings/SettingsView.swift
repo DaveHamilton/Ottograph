@@ -1,7 +1,12 @@
 import SwiftUI
 
+/// Settings apply as you make them — Mac preferences don't have a Save
+/// button. Toggles and picker choices save on the spot; text fields save
+/// when you press Return or move focus away, so a half-typed address is
+/// never written to the config (the engine reads that file live).
 struct SettingsView: View {
     @Bindable var model: SettingsModel
+    @FocusState private var focused: SettingsField?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -18,10 +23,14 @@ struct SettingsView: View {
                         row: $row,
                         signatureNames: model.signatureNames,
                         aliasChoices: model.aliasChoices(for: row.id),
-                        ccChoices: model.emailAddresses
-                    ) {
-                        model.removeRow(id: row.id)
-                    }
+                        ccChoices: model.emailAddresses,
+                        focused: $focused,
+                        onCommit: model.save,
+                        onDelete: {
+                            model.removeRow(id: row.id)
+                            model.save()
+                        }
+                    )
                     .listRowSeparator(.hidden)
                 }
             }
@@ -44,6 +53,8 @@ struct SettingsView: View {
                     TextField("seconds", value: $model.pollSeconds, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
+                        .focused($focused, equals: .pollSeconds)
+                        .onSubmit(model.save)
                     Text("seconds (event-driven reactions are instant; this is the safety net)")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -53,6 +64,8 @@ struct SettingsView: View {
                     TextField("seconds", value: $model.sendDelaySeconds, format: .number)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 70)
+                        .focused($focused, equals: .sendDelaySeconds)
+                        .onSubmit(model.save)
                     Text("seconds before a ⌃⌥⌘S message actually sends")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -68,46 +81,40 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .onChange(of: model.takeOverSend) { model.save() }
 
             Toggle("Notify when something goes wrong", isOn: $model.notifyFailures)
+                .onChange(of: model.notifyFailures) { model.save() }
             Toggle("Notify when a message is scheduled instead of sent", isOn: $model.notifyScheduled)
+                .onChange(of: model.notifyScheduled) { model.save() }
+
+            Toggle("Start Ottograph at login", isOn: $model.startAtLogin)
+                .disabled(!model.loginItemSupported)
+                .onChange(of: model.startAtLogin) { model.applyLoginItem() }
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle("Start Ottograph at login", isOn: $model.startAtLogin)
-                    .disabled(!model.loginItemSupported)
-                    .onChange(of: model.startAtLogin) {
-                        model.applyLoginItem()
-                    }
-                Text(loginItemNote)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Divider()
-
-            HStack {
-                Text(model.saveStatus)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Revert", action: model.load)
-                Button("Save", action: model.save)
-                    .keyboardShortcut(.defaultAction)
-            }
+            Text(statusLine)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .frame(minWidth: 680, minHeight: 560)
+        .onChange(of: focused) { previous, _ in
+            // Leaving a field commits it. Saving here rather than on every
+            // keystroke keeps partial text out of the config — which
+            // matters because the engine would otherwise try to apply a
+            // half-typed signature name and report it as a failure.
+            if previous != nil { model.save() }
+        }
     }
 
-    /// Start at login is a system registration rather than a config value,
-    /// so unlike everything above it, it doesn't wait for Save.
-    private var loginItemNote: String {
+    private var statusLine: String {
         if !model.loginItemStatus.isEmpty { return model.loginItemStatus }
+        if !model.saveStatus.isEmpty { return model.saveStatus }
         return model.loginItemSupported
-            ? "Takes effect immediately — the settings above apply when you click Save."
-            : "Available once Ottograph is running as an installed app (Scripts/build-app.sh --install)."
+            ? "Changes are saved as you make them."
+            : "Changes are saved as you make them. Start at login needs Ottograph installed as an app (Scripts/build-app.sh --install)."
     }
 }

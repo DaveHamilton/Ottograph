@@ -4,7 +4,7 @@ import SwiftUI
 /// Hosts the SwiftUI settings view in a plain NSWindow (the app uses the
 /// AppKit lifecycle, so there's no SwiftUI Settings scene to lean on).
 @MainActor
-final class SettingsWindowController: NSWindowController {
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: SettingsModel
 
     init(store: ConfigStore, onSaved: @escaping () -> Void) {
@@ -18,6 +18,7 @@ final class SettingsWindowController: NSWindowController {
         window.setContentSize(NSSize(width: 720, height: 600))
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
     }
 
     @available(*, unavailable)
@@ -36,5 +37,11 @@ final class SettingsWindowController: NSWindowController {
         Task { @MainActor [model] in
             model.refreshFromMail()
         }
+    }
+
+    /// Catches an edit that was typed but never committed — closing the
+    /// window is as much a commit as tabbing out of the field.
+    func windowWillClose(_ notification: Notification) {
+        model.save()
     }
 }
