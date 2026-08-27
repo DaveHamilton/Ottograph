@@ -67,7 +67,15 @@ codesign --force --sign "$IDENTITY" --timestamp "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
 
+echo "==> Regenerating the Sparkle feed"
+Scripts/appcast.sh
+
 echo
 echo "Done: $DMG (v${VERSION})"
 echo "Ship that file. Recipients drag Ottograph to Applications and launch it —"
 echo "no Gatekeeper warning. They still grant Accessibility on first run."
+echo
+echo "Then publish, in this order — the feed points at the release asset, so"
+echo "a feed pushed first would advertise a download that 404s:"
+echo "  gh release create v${VERSION} $DMG --notes-file Notes/Ottograph-${VERSION}.md"
+echo "  git add docs/appcast.xml CHANGELOG.md && git commit && git push"

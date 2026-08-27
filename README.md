@@ -23,6 +23,11 @@ Download the latest **Ottograph.dmg** from
 drag Ottograph to Applications. It's signed and notarized, so it opens without
 a Gatekeeper warning. Requires **macOS 14 or later** and Apple Mail.
 
+From 0.11.2 on, Ottograph updates itself — it checks for new versions and
+installs them in place, so this is the last manual download. **Check for
+Updates…** in the menu bar menu forces a check. Because updates keep the same
+code signature, your Accessibility grant carries across them.
+
 On first launch:
 
 1. Ottograph lives in the **menu bar** (look for the ✒️ glyph) — it has no
@@ -174,9 +179,16 @@ every other app in this category, it ships directly.
 
 `Scripts/release.sh` does the whole thing: universal build, Developer ID
 signing under the hardened runtime, notarization, stapling, a Gatekeeper
-check, and a signed + notarized DMG. One-time setup is storing notary
-credentials in the keychain — see the comment block at the top of that
-script for both auth options.
+check, a signed + notarized DMG, and the regenerated Sparkle feed. One-time
+setup is storing notary credentials in the keychain — see the comment block
+at the top of that script for both auth options.
+
+Updates are delivered by [Sparkle](https://sparkle-project.org) (MIT). The
+appcast lives in `docs/appcast.xml`, served by GitHub Pages at
+`davehamilton.github.io/Ottograph/appcast.xml`, and points at the DMG
+attached to each GitHub Release. Every update is signed with an EdDSA key
+whose public half is baked into the app, so a tampered download is rejected
+even if the feed itself were replaced.
 
 Every build (local ones too) is signed with the same Developer ID identity
 under the hardened runtime, so macOS treats development and release builds
@@ -218,7 +230,9 @@ as the same app and the Accessibility grant carries across them.
 - [x] Distribution — universal (Apple Silicon + Intel) build, Developer ID
       signing under the hardened runtime, notarized and stapled DMG, all via
       `Scripts/release.sh`
-- [ ] Auto-updates (Sparkle), so new versions don't mean a manual re-download
+- [x] v0.11.2 — the running version is shown in Settings, and Ottograph
+      updates itself via Sparkle (signed appcast, updates keep the code
+      signature so the Accessibility grant survives)
 - [ ] Localization-proof popup detection (currently matches English
       "From"/"Signature" labels with value-based fallbacks)
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27

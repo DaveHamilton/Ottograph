@@ -1,1 +1,17 @@
-<?xml version="1.0" standalone="yes"?><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0"><channel><title>Ottograph</title></channel></rss>
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Ottograph</title>
+        <item>
+            <title>0.11.2</title>
+            <pubDate>Thu, 27 Aug 2026 19:54:17 -0400</pubDate>
+            <link>https://github.com/DaveHamilton/Ottograph</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/DaveHamilton/Ottograph/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>0.11.2</sparkle:version>
+            <sparkle:shortVersionString>0.11.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://davehamilton.github.io/Ottograph/Ottograph-0.11.2.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/DaveHamilton/Ottograph/releases/download/v0.11.2/Ottograph-0.11.2.dmg" length="3475115" type="application/octet-stream" sparkle:edSignature="GSv+rq+G88CLhxnY8ZVAalwhHRrQpWKHDHl149ItVnxrb6ByXf5iHKZ1MlfN3qG3F8gl8OyjmMC1vTnY3f+sBg=="/>
+        </item>
+    </channel>
+</rss>

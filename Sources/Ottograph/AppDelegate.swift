@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Sparkle
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -12,6 +13,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: HotKey?
     private var sendTakeoverHotKey: HotKey?
     private var settingsController: SettingsWindowController?
+
+    /// Sparkle needs a real bundle to read SUFeedURL and SUPublicEDKey out
+    /// of. `swift run` has no Info.plist at all, so the updater simply
+    /// doesn't exist there rather than starting and failing at launch.
+    private let updater: SPUStandardUpdaterController? = {
+        guard Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil else { return nil }
+        return SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -31,6 +44,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(sendItem)
         sendDelayedItem = sendItem
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
+        if let updater {
+            let check = menu.addItem(
+                withTitle: "Check for Updates…",
+                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            check.target = updater
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Ottograph", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu

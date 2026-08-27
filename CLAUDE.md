@@ -20,15 +20,23 @@ swift run                         # run unbundled (dev loop)
 Scripts/build-app.sh --install    # build Ottograph.app, sign it, install to ~/Applications
 Scripts/build-app.sh --universal  # arm64 + x86_64 (what releases use)
 Scripts/make-icon.sh              # regenerate AppIcon.icns + menu bar template from Assets/
-Scripts/release.sh                # universal build → sign → notarize → staple → signed DMG
+Scripts/release.sh                # universal build → sign → notarize → staple → signed DMG → appcast
+Scripts/appcast.sh                # regenerate docs/appcast.xml + CHANGELOG.md on their own
 ```
 
 `Scripts/release.sh` needs a Developer ID Application certificate and notary
 credentials stored in the keychain under the profile `ottograph`; the script's
 header documents both auth options. It refuses to start if either is missing.
 
-Publishing a release: bump `VERSION` in `Scripts/build-app.sh`, run
-`Scripts/release.sh`, then `gh release create vX.Y.Z dist/Ottograph-X.Y.Z.dmg`.
+Publishing a release: write `Notes/Ottograph-X.Y.Z.md`, bump `VERSION` in
+`Scripts/build-app.sh`, run `Scripts/release.sh`, then **create the GitHub
+release before pushing the feed** — the appcast points at the release asset,
+so a feed published first advertises a download that 404s:
+
+```bash
+gh release create vX.Y.Z dist/Ottograph-X.Y.Z.dmg --notes-file Notes/Ottograph-X.Y.Z.md
+git add docs/appcast.xml CHANGELOG.md && git commit && git push
+```
 **Never commit build artifacts** — `dist/` is gitignored; binaries belong on
 GitHub Releases.
 
@@ -46,6 +54,7 @@ GitHub Releases.
 | `Notifier.swift` | UNUserNotificationCenter wrapper with repeat suppression. |
 | `LoginItem.swift` | SMAppService registration. |
 | `Config.swift` | JSON config model + store, hot-reloaded from disk. |
+| `docs/appcast.xml` | Sparkle update feed, served by GitHub Pages. Generated. |
 | `Settings/` | SwiftUI settings window, its model, and Mail introspection. |
 
 User config lives at `~/Library/Application Support/Ottograph/config.json` —
@@ -122,6 +131,32 @@ Direct distribution with Developer ID + notarization is the only path.
 entitlement** (`Ottograph.entitlements`). It's needed for exactly one feature:
 reading Mail's signature and address lists for the Settings pickers. Drop it
 and that silently breaks while everything else keeps working.
+
+**The Sparkle private key is unrecoverable.** It lives in the login keychain;
+every installed copy trusts only its public half, baked into `Info.plist` by
+`build-app.sh`. Lose it and no existing install can ever be updated again —
+they'd all need a manual re-download. Back it up
+(`generate_keys -x <file>`) and keep that file out of this repo.
+
+**Sparkle's helpers must be signed inside-out, by hand.** Xcode would do this;
+`build-app.sh` assembles the bundle itself, so it signs `Updater.app`'s
+binary, then `Updater.app`, then `Autoupdate`, then the framework's *versioned
+directory* (`Versions/B`, not the `.framework` wrapper), and only then the app.
+Signing the app first invalidates it the moment a nested helper is re-signed.
+`--deep` belongs on `codesign --verify`, never on `codesign --sign`.
+
+**Sparkle's `XPCServices` are deleted at build time.** They exist only for
+sandboxed apps, and Ottograph can't be sandboxed. Their top-level symlinks
+have to go too, or they dangle and codesign rejects the bundle.
+
+**`CHANGELOG.md` is generated — don't hand-edit it.** `Scripts/appcast.sh`
+builds it from `Notes/Ottograph-*.md`, the same files Sparkle shows in its
+update dialog, so the two can't drift.
+
+**Every released DMG must stay in `dist/appcast/`.** `generate_appcast` reads
+the archives themselves to compute each entry's signature and minimum OS; a
+DMG missing from that folder vanishes from the feed. The folder is gitignored,
+so it lives on the release machine only.
 
 **Release builds must be universal.** Apple Silicon-only builds leave Intel
 users with an app that won't launch.
