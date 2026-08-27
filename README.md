@@ -2,23 +2,19 @@
 
 <img src="Assets/otto.png" width="320" alt="Otto, a small friendly robot, signing a flowing cursive O with a fountain pen" align="right">
 
-**The right signature, automatically.**
+**The right signature for every Mail alias, automatically.**
 
 Ottograph is a macOS menu bar app that gives Apple Mail what it has never had
 natively: a different signature for each **alias** address. Pick an alias in a
 compose window's From popup and Ottograph swaps in the signature you mapped to
 it — instantly, exactly as if you'd chosen it from the Signature popup yourself.
 
-## The name
-
-*Otto* is the robot in the Automator icon — the mascot of the Sal Soghoian era
-of Mac automation. An *autograph* is a signature. Ottograph is Otto, writing
-your autograph. It's also a loose homage to SigPro, which did this job back when
-Mail still allowed plugins.
-
-The app icon and mascot art were generated with Nano Banana Pro
-(`Assets/nbp-icon.png`, `Assets/otto.png`); `Scripts/make-icon.sh` masks the
-icon artwork into the macOS squircle and packs the `.icns`.
+> [!NOTE]
+> **This is a test build.** It works, it's signed and notarized, and it's in
+> daily use — but it has been exercised on a small number of Macs, in English,
+> on recent macOS. It automates Apple Mail's interface, so a macOS or Mail
+> update can change what it's reaching for. Expect rough edges, and please
+> report anything odd rather than assuming it's you.
 
 ## How it works
 
@@ -209,3 +205,19 @@ as the same app and the Accessibility grant carries across them.
   it's the same UI action a human would take, just fast.
 - Popup identification assumes English labels ("From", "Signature",
   "Priority") with heuristic fallbacks.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The app icon and mascot artwork in `Assets/` are
+included under the same terms.
+
+## The name
+
+*Otto* is the robot in the Automator icon — the mascot of the Sal Soghoian era
+of Mac automation. An *autograph* is a signature. Ottograph is Otto, writing
+your autograph. It's also a loose homage to SigPro, which did this job back when
+Mail still allowed plugins.
+
+The app icon and mascot art were generated with Nano Banana Pro
+(`Assets/nbp-icon.png`, `Assets/otto.png`); `Scripts/make-icon.sh` masks the
+icon artwork into the macOS squircle and packs the `.icns`.
