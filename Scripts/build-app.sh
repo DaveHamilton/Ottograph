@@ -13,7 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="0.11.0"
+VERSION="0.11.1"
 BUNDLE_ID="com.davehamilton.Ottograph"
 APP="dist/Ottograph.app"
 

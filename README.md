@@ -213,6 +213,8 @@ as the same app and the Accessibility grant carries across them.
       menu bar glyph while paused
 - [x] v0.11 — Settings apply immediately; the Save and Revert buttons are
       gone, so every control behaves the same way
+- [x] v0.11.1 — a fresh install starts genuinely empty: no placeholder
+      `example.com` mappings, and Settings shows a real empty state instead
 - [x] Distribution — universal (Apple Silicon + Intel) build, Developer ID
       signing under the hardened runtime, notarized and stapled DMG, all via
       `Scripts/release.sh`
