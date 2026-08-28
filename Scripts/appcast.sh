@@ -125,4 +125,9 @@ fi
 } > CHANGELOG.md
 
 echo "Wrote $FEED and CHANGELOG.md"
-grep -o 'sparkle:version="[^"]*"' "$FEED" | sort -Vu | sed 's/^/  /'
+# Versions are elements (<sparkle:version>0.11.3</sparkle:version>), not
+# attributes. Grepping for the attribute form matched nothing, so this
+# summary silently printed an empty list every time — and an empty list
+# looks identical to a feed that lost an entry, which is the exact failure
+# this line exists to catch.
+grep -oE '<sparkle:version>[^<]+' "$FEED" | sed 's|<sparkle:version>|  |' | sort -Vu
