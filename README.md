@@ -233,6 +233,8 @@ as the same app and the Accessibility grant carries across them.
 - [x] v0.11.2 — the running version is shown in Settings, and Ottograph
       updates itself via Sparkle (signed appcast, updates keep the code
       signature so the Accessibility grant survives)
+- [x] v0.11.3 — Settings controls updates too: an automatic-check
+      preference, Check Now, and the running version beside the last check
 - [ ] Localization-proof popup detection (currently matches English
       "From"/"Signature" labels with value-based fallbacks)
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27

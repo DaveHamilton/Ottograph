@@ -61,10 +61,15 @@ fi
 # lives under its own release tag, so generate with a placeholder and
 # rewrite per version below. Safe to post-edit only because appcast
 # signing is off; the enclosure URL isn't covered by the EdDSA signature.
+# --maximum-deltas 0: no binary deltas. They save real bandwidth on big
+# apps, but this one is ~3.5MB, and each delta is another asset that has
+# to be uploaded to exactly the right release — a delta advertised in the
+# feed but missing from the release is a 404 on the update path.
 "$GEN" "$ARCHIVES" \
 	-o "$FEED" \
 	--link "$REPO_URL" \
 	--full-release-notes-url "$REPO_URL/releases" \
+	--maximum-deltas 0 \
 	--download-url-prefix "https://ottograph.invalid/"
 
 perl -pi -e 's{https://ottograph\.invalid/Ottograph-([0-9]+(?:\.[0-9]+)*)\.dmg}

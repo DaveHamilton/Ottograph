@@ -3,6 +3,17 @@
     <channel>
         <title>Ottograph</title>
         <item>
+            <title>0.11.3</title>
+            <pubDate>Thu, 27 Aug 2026 21:46:37 -0400</pubDate>
+            <link>https://github.com/DaveHamilton/Ottograph</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/DaveHamilton/Ottograph/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>0.11.3</sparkle:version>
+            <sparkle:shortVersionString>0.11.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://davehamilton.github.io/Ottograph/Ottograph-0.11.3.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/DaveHamilton/Ottograph/releases/download/v0.11.3/Ottograph-0.11.3.dmg" length="3494805" type="application/octet-stream" sparkle:edSignature="GL1kVlyjynxIs5SDrE2P+RHK9OOjc6Ph5Lmg1vlS0OXkp9zaKVotbT7LGJub9jPLaACSHGeQeJNPYWcOU76NCw=="/>
+        </item>
+        <item>
             <title>0.11.2</title>
             <pubDate>Thu, 27 Aug 2026 19:54:17 -0400</pubDate>
             <link>https://github.com/DaveHamilton/Ottograph</link>
