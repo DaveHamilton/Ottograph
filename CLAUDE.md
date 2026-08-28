@@ -176,6 +176,16 @@ with:
 log show --last 1h --predicate 'subsystem == "com.davehamilton.Ottograph"'
 ```
 
+**Log activity at `notice`, never at `info`.** `OS_LOG_TYPE_INFO` lives in
+a memory buffer that gets purged, and `log show` omits it unless `--info`
+is passed. Measured on macOS 26: a default `log show` returns notice and
+error and drops info entirely. Logging the engine's activity at info level
+therefore produced a Copy Diagnostics report containing only failures, on
+a machine that was working — the feature looked like it worked, because it
+produced output. `Log.note()` is the activity level and uses `notice()`;
+`Log.error()` is for failures. Note also that `log` is a zsh builtin that
+shadows `/usr/bin/log`, so a check from a zsh script needs the full path.
+
 Messages are logged `.public` deliberately: the default redacts interpolated
 strings, which would replace every alias and signature name with `<private>`
 — exactly the words that make a report actionable. Nothing sensitive goes

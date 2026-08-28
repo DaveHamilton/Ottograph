@@ -35,8 +35,17 @@ struct Log {
         logger = os.Logger(subsystem: Self.subsystem, category: category)
     }
 
-    func info(_ message: String) {
-        logger.info("\(message, privacy: .public)")
+    /// Routine activity — what the engine did, which is half of any bug
+    /// report ("it applied the wrong one" needs the applies).
+    ///
+    /// `notice()`, deliberately, and never `info()`. OS_LOG_TYPE_INFO is
+    /// held in a memory buffer that gets purged, and `log show` omits it
+    /// unless `--info` is passed — so activity logged at info level is
+    /// missing from a report written minutes later, which is every report.
+    /// Verified on macOS 26: a default `log show` returns notice and error
+    /// and drops info entirely.
+    func note(_ message: String) {
+        logger.notice("\(message, privacy: .public)")
         echo(message)
     }
 

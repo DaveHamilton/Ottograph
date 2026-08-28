@@ -126,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 formatter.timeStyle = .short
                 let time = formatter.string(from: when)
                 self.statusMenuItem.title = "Sending at \(time) — cancel in Send Later"
-                Log.send.info("Scheduled for \(time)")
+                Log.send.note("Scheduled for \(time)")
                 if self.store.config.notifyScheduled {
                     Notifier.post(
                         title: "Scheduled, not sent",

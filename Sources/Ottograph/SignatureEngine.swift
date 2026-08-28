@@ -563,7 +563,7 @@ final class SignatureEngine {
     }
 
     private func log(_ message: String) {
-        Log.engine.info(message)
+        Log.engine.note(message)
     }
 }
 

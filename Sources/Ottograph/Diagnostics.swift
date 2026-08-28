@@ -52,6 +52,11 @@ enum Diagnostics {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
         process.arguments = [
             "show", "--last", window, "--style", "compact",
+            // --info so nothing logged at info level is silently dropped.
+            // Log.note() uses notice precisely so it doesn't depend on
+            // this, but a report that quietly omits lines is worse than
+            // no report, so ask for them both ways.
+            "--info",
             "--predicate", "subsystem == \"\(subsystem)\"",
         ]
         let pipe = Pipe()
