@@ -101,17 +101,22 @@ codesign --force --sign "$IDENTITY" --timestamp "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
 
-echo "==> Regenerating the Sparkle feed"
-Scripts/appcast.sh
+# Only when publishing. Regenerating a feed you have no intention of
+# pushing just dirties two tracked files with entries pointing at a
+# release that doesn't exist — a loaded gun for the next `git add`.
+if (( PUBLISH )); then
+	echo "==> Regenerating the Sparkle feed"
+	Scripts/appcast.sh
+fi
 
 echo
 echo "Done: $DMG (v${VERSION})"
 
 if (( ! PUBLISH )); then
 	echo
-	echo "--no-publish: stopping here. Nothing has been released, and the feed in"
-	echo "$FEED now references a v${VERSION} download that does not exist yet."
-	echo "Do not push it until 'gh release create v${VERSION} $DMG' has run."
+	echo "--no-publish: the feed and CHANGELOG were left alone, so the repo is"
+	echo "still clean and this DMG is just an artifact. Install it by hand to"
+	echo "test on another Mac; re-run without --no-publish to release properly."
 	exit 0
 fi
 
