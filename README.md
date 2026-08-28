@@ -14,7 +14,10 @@ it — instantly, exactly as if you'd chosen it from the Signature popup yoursel
 > daily use — but it has been exercised on a small number of Macs, in English,
 > on recent macOS. It automates Apple Mail's interface, so a macOS or Mail
 > update can change what it's reaching for. Expect rough edges, and please
-> report anything odd rather than assuming it's you.
+> report anything odd rather than assuming it's you. **Copy Diagnostics** in
+> the menu bar menu puts everything a report needs on your clipboard — the
+> versions involved, whether the Accessibility grant is still in place, and
+> what the engine logged when it gave up.
 
 ## Install
 

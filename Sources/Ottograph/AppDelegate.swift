@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             check.target = updater
         }
+        menu.addItem(withTitle: "Copy Diagnostics", action: #selector(copyDiagnostics), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Ottograph", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -125,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 formatter.timeStyle = .short
                 let time = formatter.string(from: when)
                 self.statusMenuItem.title = "Sending at \(time) — cancel in Send Later"
-                print("[DelayedSend] scheduled for \(time)")
+                Log.send.info("Scheduled for \(time)")
                 if self.store.config.notifyScheduled {
                     Notifier.post(
                         title: "Scheduled, not sent",
@@ -134,11 +135,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             case .failed(let message):
                 self.statusMenuItem.title = message
-                print("[DelayedSend] \(message)")
+                Log.send.error(message)
                 if self.store.config.notifyFailures {
                     Notifier.post(title: "Ottograph couldn't schedule that message", body: message)
                 }
             }
+        }
+    }
+
+    /// Puts version, OS, Mail and Accessibility state, and the recent
+    /// engine log on the clipboard — the whole of what a report needs.
+    @objc private func copyDiagnostics() {
+        statusMenuItem.title = "Collecting diagnostics…"
+        Task { @MainActor [weak self] in
+            let report = await Diagnostics.report()
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(report, forType: .string)
+            self?.statusMenuItem.title = "Diagnostics copied — paste them into your report"
         }
     }
 
