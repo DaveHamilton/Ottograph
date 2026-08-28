@@ -26,6 +26,12 @@ import Foundation
 ///   just clicked) is open. Failed attempts are retried shortly after
 ///   instead of being abandoned.
 /// - Never launches Mail; scanning is skipped unless Mail is already running.
+///
+/// Main-actor isolated on purpose: every path into it already runs on the
+/// main run loop — the poll timer, the AXObserver's run loop source, and
+/// AppDelegate — and the per-window state below has no locking of its own.
+/// The `assumeIsolated` calls are assertions of that, not workarounds.
+@MainActor
 final class SignatureEngine {
     private let store: ConfigStore
     private var timer: Timer?
@@ -34,7 +40,10 @@ final class SignatureEngine {
     private var retryState: [AXElementKey: (email: String, attempts: Int)] = [:]
     private var axApp: AXUIElement?
     private var axAppPID: pid_t = -1
-    private var observer: AXObserver?
+    /// `nonisolated(unsafe)` only so `deinit` can remove the run loop
+    /// source: AXObserver is a C type with no Sendable conformance, and
+    /// every assignment to this happens on the main actor.
+    nonisolated(unsafe) private var observer: AXObserver?
 
     private static let maxApplyAttempts = 4
 
@@ -50,15 +59,21 @@ final class SignatureEngine {
 
     private func report(_ message: String, failure: Bool = false) {
         onStatus?(message)
-        if failure { onFailure?(message) }
+        guard failure else { return }
+        Log.engine.error(message)
+        onFailure?(message)
     }
 
     init(store: ConfigStore) {
         self.store = store
     }
 
+    /// Not `teardownObserver()`: a deinit can't call a main-actor method.
+    /// Removing the run loop source is safe from anywhere.
     deinit {
-        teardownObserver()
+        if let observer {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+        }
     }
 
     func start() {
@@ -87,15 +102,20 @@ final class SignatureEngine {
 
     /// Prompts the user (once, system-managed) if the process isn't trusted.
     static func ensureAccessibilityPermission() -> Bool {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        // Spelled out rather than read from kAXTrustedCheckOptionPrompt:
+        // that constant is imported as a mutable global, so Swift 6 won't
+        // let it be read safely. The string is the constant's value and
+        // has been since the API shipped.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
     }
 
     private func scheduleTimer() {
         timer?.invalidate()
         let interval = store.config.pollSeconds
-        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
-            self?.tick()
+        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+            // Added to the main run loop below, so it fires on the main actor.
+            MainActor.assumeIsolated { [weak self] in self?.tick() }
         }
         timer.tolerance = interval * 0.2
         RunLoop.main.add(timer, forMode: .common)
@@ -125,8 +145,8 @@ final class SignatureEngine {
     }
 
     private func scheduleScan(after delay: TimeInterval) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            self?.tick()
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            MainActor.assumeIsolated { [weak self] in self?.tick() }
         }
     }
 
@@ -140,12 +160,16 @@ final class SignatureEngine {
         if let axApp {
             AXObserverAddNotification(created, axApp, kAXWindowCreatedNotification as CFString, refcon)
         }
-        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .defaultMode)
+        // .commonModes, not .defaultMode: a run loop in event-tracking mode
+        // (a menu open, a window being dragged) does not run the default
+        // mode, so AX notifications would queue until it returned. The poll
+        // masked that; the fix is to stop relying on the poll for it.
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(created), .commonModes)
     }
 
     private func teardownObserver() {
         if let observer {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         }
         observer = nil
     }
@@ -185,7 +209,9 @@ final class SignatureEngine {
 
         if axApp == nil || axAppPID != mail.processIdentifier {
             teardownObserver()
-            axApp = AXUIElementCreateApplication(mail.processIdentifier)
+            let created = AXUIElementCreateApplication(mail.processIdentifier)
+            AX.limitMessagingTime(for: created)
+            axApp = created
             axAppPID = mail.processIdentifier
             lastSenderByWindow.removeAll()
             retryState.removeAll()
@@ -430,15 +456,17 @@ final class SignatureEngine {
     /// popup with fresh elements. Only a genuine miss re-applies (which
     /// then blinks once more — the acceptable cost of a real failure).
     private func scheduleVerification(windowKey: AXElementKey, window: AXUIElement, email: String, target: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let self, self.isRunning else { return }
-            guard self.lastSenderByWindow[windowKey] == email else { return } // sender moved on
-            guard let compose = self.discoverControls(in: window),
-                  let current = AX.stringValue(of: compose.signature) else { return } // window gone/rebuilding
-            if current != target {
-                self.log("Post-apply check for \(email): expected '\(target)', found '\(current)' — reapplying")
-                self.lastSenderByWindow[windowKey] = nil
-                self.scheduleScan(after: 0.05)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            MainActor.assumeIsolated { [weak self] in
+                guard let self, self.isRunning else { return }
+                guard self.lastSenderByWindow[windowKey] == email else { return } // sender moved on
+                guard let compose = self.discoverControls(in: window),
+                      let current = AX.stringValue(of: compose.signature) else { return } // window gone/rebuilding
+                if current != target {
+                    self.log("Post-apply check for \(email): expected '\(target)', found '\(current)' — reapplying")
+                    self.lastSenderByWindow[windowKey] = nil
+                    self.scheduleScan(after: 0.05)
+                }
             }
         }
     }
@@ -505,27 +533,31 @@ final class SignatureEngine {
     /// Invisible Unicode formatting marks (bidi isolates etc.) that Mail
     /// wraps around addresses in some fields — they break string equality
     /// against the plain address from the config.
-    private static let formattingMarks = CharacterSet(charactersIn:
+    nonisolated private static let formattingMarks = CharacterSet(charactersIn:
         "\u{200E}\u{200F}\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}")
 
-    static func cleanAddress(_ s: String) -> String {
+    nonisolated static func cleanAddress(_ s: String) -> String {
         String(String.UnicodeScalarView(s.unicodeScalars.filter { !formattingMarks.contains($0) }))
             .trimmingCharacters(in: .whitespaces)
     }
 
     /// Extracts the address from From-popup values like
     /// "Dave Hamilton – dave@example.com" or "Name <dave@example.com>".
-    static func emailAddress(in sender: String) -> String? {
+    nonisolated static func emailAddress(in sender: String) -> String? {
         for token in sender.split(whereSeparator: { $0 == " " || $0 == "\n" }) {
             guard token.contains("@") else { continue }
-            return cleanAddress(token.trimmingCharacters(in: CharacterSet(charactersIn: "<>,")))
+            // Strip the invisible marks *before* trimming punctuation, not
+            // after. A mark sitting outside the bracket blocks the trim —
+            // "\u{200E}<dave@example.com>" came back as "<dave@example.com",
+            // which matches no mapping, so the alias silently got nothing.
+            return cleanAddress(String(token))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "<>,"))
         }
         return nil
     }
 
     private func log(_ message: String) {
-        let stamp = ISO8601DateFormatter().string(from: Date())
-        print("[\(stamp)] \(message)")
+        Log.engine.info(message)
     }
 }
 
@@ -533,5 +565,6 @@ final class SignatureEngine {
 private let ottographAXCallback: AXObserverCallback = { _, _, notification, refcon in
     guard let refcon else { return }
     let engine = Unmanaged<SignatureEngine>.fromOpaque(refcon).takeUnretainedValue()
-    engine.handleNotification(notification as String)
+    let name = notification as String // CFString isn't Sendable; String is
+    MainActor.assumeIsolated { engine.handleNotification(name) }
 }

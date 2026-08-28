@@ -11,8 +11,12 @@ final class HotKey {
     private let onPress: () -> Void
     private let hotKeyID: EventHotKeyID
 
-    private static var nextID: UInt32 = 1
+    /// Registration happens from `AppDelegate` and nowhere else, so the
+    /// counter is main-actor state. `deinit` unregisters without touching
+    /// it, which is what lets it stay isolated.
+    @MainActor private static var nextID: UInt32 = 1
 
+    @MainActor
     init?(keyCode: UInt32, carbonModifiers: UInt32, onPress: @escaping () -> Void) {
         self.onPress = onPress
         self.hotKeyID = EventHotKeyID(signature: 0x4F54_544F /* 'OTTO' */, id: HotKey.nextID)

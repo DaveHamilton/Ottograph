@@ -23,6 +23,7 @@ enum DelayedSend {
             return
         }
         let app = AXUIElementCreateApplication(mail.processIdentifier)
+        AX.limitMessagingTime(for: app)
         guard let rawWindow = AX.attribute(app, kAXFocusedWindowAttribute),
               CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else {
             onOutcome(.failed("No focused Mail window"))

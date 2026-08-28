@@ -3,6 +3,20 @@ import Foundation
 
 /// Thin helpers over the Accessibility (AXUIElement) C API.
 enum AX {
+    /// Every AX call is a synchronous IPC round trip into the target app,
+    /// and the default timeout is ~6 seconds *per call*. A single scan
+    /// makes hundreds of them, so a beachballing Mail would otherwise hang
+    /// Ottograph's main thread — freezing the menu bar item and the
+    /// Settings window, which looks like Ottograph crashed rather than
+    /// Mail stalling. Two seconds is far longer than a healthy reply and
+    /// short enough to stay responsive.
+    static let messagingTimeout: Float = 2.0
+
+    /// Applies to every message sent to this app's element tree.
+    static func limitMessagingTime(for application: AXUIElement) {
+        AXUIElementSetMessagingTimeout(application, messagingTimeout)
+    }
+
     static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?
         let err = AXUIElementCopyAttributeValue(element, name as CFString, &value)
