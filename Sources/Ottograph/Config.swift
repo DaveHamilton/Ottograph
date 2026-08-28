@@ -51,26 +51,33 @@ struct Config: Codable {
 }
 
 final class ConfigStore {
-    static let directory = FileManager.default.homeDirectoryForCurrentUser
+    static let defaultDirectory = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Ottograph", isDirectory: true)
-    static let fileURL = directory.appendingPathComponent("config.json")
+
+    let directory: URL
+    let fileURL: URL
 
     private(set) var config: Config = .defaultConfig
     private var lastModified: Date?
 
-    init() {
+    /// The directory is injectable so tests can round-trip a config
+    /// without touching (or clobbering) the real one in the user's
+    /// Application Support folder.
+    init(directory: URL = ConfigStore.defaultDirectory) {
+        self.directory = directory
+        self.fileURL = directory.appendingPathComponent("config.json")
         ensureFileExists()
         reloadIfChanged(force: true)
     }
 
     private func ensureFileExists() {
         let fm = FileManager.default
-        guard !fm.fileExists(atPath: Self.fileURL.path) else { return }
-        try? fm.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        guard !fm.fileExists(atPath: fileURL.path) else { return }
+        try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let data = try? encoder.encode(Config.defaultConfig) {
-            try? data.write(to: Self.fileURL)
+            try? data.write(to: fileURL)
         }
     }
 
@@ -81,9 +88,9 @@ final class ConfigStore {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(newConfig)
-        if let existing = try? Data(contentsOf: Self.fileURL), existing == data { return }
-        try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        try data.write(to: Self.fileURL)
+        if let existing = try? Data(contentsOf: fileURL), existing == data { return }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: fileURL)
         reloadIfChanged(force: true)
     }
 
@@ -91,12 +98,12 @@ final class ConfigStore {
     /// Returns true if a reload happened and parsed successfully.
     @discardableResult
     func reloadIfChanged(force: Bool = false) -> Bool {
-        let attrs = try? FileManager.default.attributesOfItem(atPath: Self.fileURL.path)
+        let attrs = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         let modified = attrs?[.modificationDate] as? Date
         guard force || modified != lastModified else { return false }
         lastModified = modified
 
-        guard let data = try? Data(contentsOf: Self.fileURL),
+        guard let data = try? Data(contentsOf: fileURL),
               let parsed = try? JSONDecoder().decode(Config.self, from: data) else {
             return false
         }

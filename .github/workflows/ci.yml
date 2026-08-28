@@ -1,0 +1,46 @@
+# Ottograph can't be meaningfully tested in CI — the engine's whole job is a
+# conversation with a running Mail, and there is no Mail (and no
+# Accessibility grant) on a build runner. What CI can do is guarantee that
+# main compiles, that the pure logic still behaves, and that the bundling
+# script still assembles a valid bundle — the three things that otherwise
+# only get checked on one Mac, by hand, at release time.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      # No Developer ID on a runner, so this signs ad-hoc — which still
+      # exercises the parts that actually break: the Sparkle framework
+      # path, the inside-out signing order, and the codesign --verify at
+      # the end. A bundle that can't be assembled fails here rather than
+      # halfway through a release.
+      - name: Assemble the app bundle
+        run: Scripts/build-app.sh
+
+      - name: Confirm the bundle is universal-capable and well-formed
+        run: |
+          codesign --verify --strict --deep --verbose=2 dist/Ottograph.app
+          test -d dist/Ottograph.app/Contents/Frameworks/Sparkle.framework
+          test ! -e dist/Ottograph.app/Contents/Frameworks/Sparkle.framework/XPCServices
