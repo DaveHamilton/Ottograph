@@ -23,7 +23,17 @@ Scripts/build-app.sh --universal  # arm64 + x86_64 (what releases use)
 Scripts/make-icon.sh              # regenerate AppIcon.icns + menu bar template from Assets/
 Scripts/release.sh                # universal build → sign → notarize → staple → signed DMG → appcast
 Scripts/appcast.sh                # regenerate docs/appcast.xml + CHANGELOG.md on their own
+swift Scripts/ax-probe.swift      # dump what Mail's compose windows expose to AX
 ```
+
+`ax-probe.swift` is the tool for "what did Mail change?" after a macOS or
+Mail update — it prints every compose-window popup and field with its
+`AXIdentifier`, title, value, and label element, and with `--open-menus`
+the Signature menu's items too. Run it from a terminal that has
+Accessibility trust. It's also the standing answer to whether the engine
+could stop matching on English titles: if identifiers are populated, they
+are structural and locale-independent, and `discoverControls` should be
+using them.
 
 `Scripts/release.sh` needs a Developer ID Application certificate and notary
 credentials stored in the keychain under the profile `ottograph`; the script's
