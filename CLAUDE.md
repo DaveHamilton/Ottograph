@@ -16,6 +16,7 @@ through the Accessibility API instead.
 
 ```bash
 swift build                       # compile
+swift test                        # the pure logic — parsing, config, Settings conversions
 swift run                         # run unbundled (dev loop)
 Scripts/build-app.sh --install    # build Ottograph.app, sign it, install to ~/Applications
 Scripts/build-app.sh --universal  # arm64 + x86_64 (what releases use)
@@ -29,14 +30,18 @@ credentials stored in the keychain under the profile `ottograph`; the script's
 header documents both auth options. It refuses to start if either is missing.
 
 Publishing a release: write `Notes/Ottograph-X.Y.Z.md`, bump `VERSION` in
-`Scripts/build-app.sh`, run `Scripts/release.sh`, then **create the GitHub
-release before pushing the feed** — the appcast points at the release asset,
-so a feed published first advertises a download that 404s:
+`Scripts/build-app.sh`, run `Scripts/release.sh`. The script asks before
+creating the GitHub release, then checks that every enclosure URL in the
+feed actually resolves — the appcast points at the release asset, so a feed
+published first advertises a download that 404s, and that ordering is now
+enforced rather than written down. It prints the final commit for you:
 
 ```bash
-gh release create vX.Y.Z dist/Ottograph-X.Y.Z.dmg --notes-file Notes/Ottograph-X.Y.Z.md
-git add docs/appcast.xml CHANGELOG.md && git commit && git push
+git add docs/appcast.xml CHANGELOG.md docs/Ottograph-X.Y.Z.md && git commit && git push
 ```
+
+`--no-publish` stops after the DMG (and says plainly that the feed on disk
+now references a release that doesn't exist yet).
 **Never commit build artifacts** — `dist/` is gitignored; binaries belong on
 GitHub Releases.
 
@@ -54,6 +59,9 @@ GitHub Releases.
 | `Notifier.swift` | UNUserNotificationCenter wrapper with repeat suppression. |
 | `LoginItem.swift` | SMAppService registration. |
 | `Config.swift` | JSON config model + store, hot-reloaded from disk. |
+| `Log.swift` | Unified logging, so diagnostics outlive a Finder launch. |
+| `Diagnostics.swift` | Builds a bug report: versions, AX trust, recent log. |
+| `Tests/OttographTests` | The pure logic only — the engine needs a live Mail. |
 | `docs/appcast.xml` | Sparkle update feed, served by GitHub Pages. Generated. |
 | `Settings/` | SwiftUI settings window, its model, and Mail introspection. |
 
@@ -65,6 +73,14 @@ of any example you commit; use `example.com`.
 
 Things that look like reasonable ideas but are known dead ends. Each cost real
 debugging time; please don't re-derive them.
+
+**Strip Mail's invisible marks *before* trimming punctuation, not after.**
+`emailAddress(in:)` used to trim `<>,` first and clean the bidi marks
+second. A mark sitting outside the bracket blocks the trim, so
+`\u{200E}<dave@example.com>` parsed as `<dave@example.com` — an address that
+matches no mapping, so the alias silently gets nothing and the log says only
+"No mapping for". Found by a unit test, never by using the app: it needs an
+address Mail decided to wrap, which most don't.
 
 **Don't rewrite the engine in AppleScript.** Mail's `outgoing messages` only
 lists *script-created* compose windows. Windows the user opens (⌘N, reply,
@@ -120,6 +136,23 @@ Return, focus loss, or window close; toggles and pickers save immediately.
 `save()` must **not** reload afterwards — `load()` sorts rows, which would make
 them jump around under the cursor mid-edit.
 
+**`print()` goes nowhere in a shipped build.** An app launched from Finder
+has no stdout, so every log line the app produced in normal use was
+discarded — which meant a user report could never be more than "it stopped
+working". Logging goes through `Log` (unified logging) instead. Read it back
+with:
+
+```bash
+log show --last 1h --predicate 'subsystem == "com.davehamilton.Ottograph"'
+```
+
+Messages are logged `.public` deliberately: the default redacts interpolated
+strings, which would replace every alias and signature name with `<private>`
+— exactly the words that make a report actionable. Nothing sensitive goes
+in, and the engine never reads a compose body at all (`AXTextArea` is
+pruned before it gets there). **Copy Diagnostics** in the menu bar menu
+packages this up with the version, macOS, Mail, and Accessibility state.
+
 ## Distribution constraints
 
 **Ottograph can never ship on the Mac App Store or TestFlight.** App Store apps
@@ -170,10 +203,14 @@ have to go too, or they dangle and codesign rejects the bundle.
 builds it from `Notes/Ottograph-*.md`, the same files Sparkle shows in its
 update dialog, so the two can't drift.
 
-**Every released DMG must stay in `dist/appcast/`.** `generate_appcast` reads
-the archives themselves to compute each entry's signature and minimum OS; a
-DMG missing from that folder vanishes from the feed. The folder is gitignored,
-so it lives on the release machine only.
+**Every released DMG must be in `dist/appcast/` when the feed is generated.**
+`generate_appcast` reads the archives themselves to compute each entry's
+signature and minimum OS; a DMG missing from that folder vanishes from the
+feed. The folder is gitignored, so it isn't in the repo — but it is no
+longer precious: `appcast.sh` pulls any missing DMG back from GitHub
+Releases, where all of them already live as public assets. Releases before
+0.11.2 are deliberately excluded, since they predate Sparkle and would be
+added to a signed feed unsigned.
 
 **Release builds must be universal.** Apple Silicon-only builds leave Intel
 users with an app that won't launch.
@@ -184,8 +221,13 @@ the same way (Developer ID + hardened runtime) so they count as the same app.
 
 ## Verifying changes against live Mail
 
-Unit tests can't cover this app; the real verification is driving Mail and
-reading back what happened. Write a small Swift script that uses the AX API (or
+Unit tests can't cover the *engine*; the real verification is driving Mail
+and reading back what happened. They do cover everything that isn't a
+conversation with Mail — `swift test` checks the From-popup parsing, the
+config normalising and clamping, and the Settings ↔ config conversions,
+where the three signature states (a name, `"None"`, and blank) cross two
+representations in both directions and a regression is completely silent.
+That suite found the bidi-mark bug above on its first run. Write a small Swift script that uses the AX API (or
 AppleScript, for reading Mail's model), run it from a process that has
 Accessibility trust, and assert on actual state — the popup's value, the
 message's `cc recipients`, the config file on disk.
@@ -207,8 +249,13 @@ Guidelines that keep this honest:
 
 ## Conventions
 
-- Swift 6 concurrency: `AppDelegate` and the settings types are `@MainActor`;
-  `main.swift` wraps launch in `MainActor.assumeIsolated`.
+- Swift 6 language mode, enforced (`swiftLanguageMode(.v6)` in
+  `Package.swift`) rather than merely intended. `AppDelegate`, the settings
+  types, and `SignatureEngine` are all `@MainActor`; `main.swift` wraps
+  launch in `MainActor.assumeIsolated`. The engine's `assumeIsolated` calls
+  assert something already true — the poll timer, the AXObserver's run loop
+  source, and AppDelegate all run on the main run loop, and its per-window
+  state has no locking of its own.
 - One type per file, grouped by feature (`Settings/`).
 - Comments explain *why*, not what — especially around the workarounds above,
   since every one of them looks like a bug until you know the reason.

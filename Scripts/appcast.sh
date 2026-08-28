@@ -5,10 +5,12 @@
 #
 #   Scripts/appcast.sh
 #
-# Every DMG ever released must stay in dist/appcast/ (gitignored, not in the
-# repo): generate_appcast reads the archives to compute each entry's EdDSA
-# signature, length, and minimum OS. A DMG that disappears from that folder
-# disappears from the feed.
+# generate_appcast reads the archives themselves to compute each entry's
+# EdDSA signature, length, and minimum OS, so every DMG ever released has to
+# be present in dist/appcast/ or its entry silently drops out of the feed.
+# That folder is gitignored and lives on one machine — so rather than treat
+# it as precious, this script rebuilds it from GitHub Releases, where every
+# one of those DMGs already lives as a public asset.
 #
 # Signing uses the private EdDSA key in the login keychain. That key is the
 # one unrecoverable secret here — every installed copy trusts only its
@@ -32,6 +34,33 @@ GEN=$(find .build/artifacts/sparkle/Sparkle/bin -name generate_appcast 2>/dev/nu
 VERSION=$(awk -F'"' '/^VERSION=/{print $2}' Scripts/build-app.sh)
 
 mkdir -p "$ARCHIVES"
+
+# Pull back any released DMG that isn't in the archive folder, so a fresh
+# clone (or a replacement Mac) can regenerate the whole feed. Releases
+# before MIN_SPARKLE_VERSION shipped without Sparkle and therefore without
+# an EdDSA signature; generate_appcast would happily emit an unsigned item
+# into a signed feed, so they stay out. This encodes that rule instead of
+# leaving it as a comment someone has to remember.
+MIN_SPARKLE_VERSION="0.11.2"
+older_than() {
+	[[ "$1" != "$2" && "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" == "$1" ]]
+}
+
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+	for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName' 2>/dev/null); do
+		v="${tag#v}"
+		# Plain `cond && continue` would return 1 when false, and set -e
+		# would end the script on the first release that's new enough.
+		if older_than "$v" "$MIN_SPARKLE_VERSION"; then continue; fi
+		if [[ -f "$ARCHIVES/Ottograph-${v}.dmg" ]]; then continue; fi
+		echo "Restoring Ottograph-${v}.dmg from release ${tag}"
+		gh release download "$tag" --pattern "Ottograph-${v}.dmg" --dir "$ARCHIVES" || \
+			echo "  (no matching asset on ${tag} — skipping)" >&2
+	done
+else
+	echo "gh unavailable or not logged in — using only what's already in $ARCHIVES" >&2
+fi
+
 # Only the version just built is copied in — never a blanket dist/*.dmg.
 # Releases before 0.11.2 have no Sparkle and therefore no SUPublicEDKey,
 # and generate_appcast happily emits an entry for them with no
