@@ -238,8 +238,16 @@ as the same app and the Accessibility grant carries across them.
       signature so the Accessibility grant survives)
 - [x] v0.11.3 — Settings controls updates too: an automatic-check
       preference, Check Now, and the running version beside the last check
-- [ ] Localization-proof popup detection (currently matches English
-      "From"/"Signature" labels with value-based fallbacks)
+- [x] v0.11.4 — Copy Diagnostics puts the versions, the permission state,
+      and the recent engine log on the clipboard in one click; Settings
+      flags a signature name Mail doesn't have instead of letting it fail
+      silently at compose time; and an alias whose address Mail wraps in
+      invisible formatting characters no longer quietly gets nothing
+- [ ] Localization-proof popup detection — Mail turns out to expose stable
+      identifiers (`popup_from`, `popup_signature`, `Mail.ccField`),
+      confirmed against Mail 16.0 with `Scripts/ax-probe.swift`, so
+      discovery can stop matching English labels entirely. Menu items have
+      no such identifiers, but signature names are user data rather than UI
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27
 
 ## Limitations
