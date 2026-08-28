@@ -47,6 +47,10 @@ final class SignatureEngine {
 
     private static let maxApplyAttempts = 4
 
+    /// The engine re-evaluates every tick, so a persistent failure would
+    /// otherwise write a line per second for as long as it persists.
+    private var failureLog = RepeatSuppressor()
+
     private(set) var isRunning = false
 
     /// Human-readable status for the menu bar UI.
@@ -60,7 +64,9 @@ final class SignatureEngine {
     private func report(_ message: String, failure: Bool = false) {
         onStatus?(message)
         guard failure else { return }
-        Log.engine.error(message)
+        // The status line is cheap and always current; the log and the
+        // banner are the ones a repeat would drown.
+        if failureLog.allows(message) { Log.engine.error(message) }
         onFailure?(message)
     }
 

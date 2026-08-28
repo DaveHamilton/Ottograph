@@ -8,8 +8,7 @@ import UserNotifications
 /// nothing rather than crashing.
 @MainActor
 enum Notifier {
-    private static var lastPosted: [String: Date] = [:]
-    private static let repeatWindow: TimeInterval = 60
+    private static var suppressor = RepeatSuppressor()
 
     static var isAvailable: Bool {
         Bundle.main.bundleIdentifier != nil && Bundle.main.bundlePath.hasSuffix(".app")
@@ -23,10 +22,7 @@ enum Notifier {
     /// Posts a banner. Identical messages within a minute are dropped.
     static func post(title: String, body: String) {
         guard isAvailable else { return }
-        let key = title + "\u{1}" + body
-        let now = Date()
-        if let last = lastPosted[key], now.timeIntervalSince(last) < repeatWindow { return }
-        lastPosted[key] = now
+        guard suppressor.allows(title + "\u{1}" + body) else { return }
 
         let content = UNMutableNotificationContent()
         content.title = title

@@ -188,6 +188,46 @@ func flagsUnknownSignatureNames() throws {
     #expect(model.namesUnknownSignature(SettingsModel.Row(signature: "None")) == false)
 }
 
+// MARK: - Repeat suppression
+
+/// The engine re-evaluates every tick, so a condition that persists reports
+/// itself once a second. Copy Diagnostics captures a 30-minute window, so
+/// unsuppressed that is ~1800 identical lines burying whatever else is in
+/// there — the failure mode this exists to prevent.
+@Test("A repeated message is dropped inside the window and allowed after it")
+func suppressesRepeats() {
+    let start = Date(timeIntervalSinceReferenceDate: 0)
+    var suppressor = RepeatSuppressor(window: 60)
+    // Bound to locals because #expect wraps its expression in a closure
+    // with an immutable capture, so it can't call a mutating method.
+    let first = suppressor.allows("needs Accessibility", now: start)
+    let afterASecond = suppressor.allows("needs Accessibility", now: start.addingTimeInterval(1))
+    let justInside = suppressor.allows("needs Accessibility", now: start.addingTimeInterval(59))
+    let atTheWindow = suppressor.allows("needs Accessibility", now: start.addingTimeInterval(60))
+    let justAfter = suppressor.allows("needs Accessibility", now: start.addingTimeInterval(61))
+
+    #expect(first)
+    #expect(afterASecond == false)
+    #expect(justInside == false)
+    // A persistent condition still leaves a heartbeat: falling permanently
+    // silent would read as resolved.
+    #expect(atTheWindow)
+    #expect(justAfter == false)
+}
+
+@Test("Different messages don't suppress each other")
+func suppressesPerMessage() {
+    let start = Date(timeIntervalSinceReferenceDate: 0)
+    var suppressor = RepeatSuppressor(window: 60)
+    let accessibility = suppressor.allows("needs Accessibility", now: start)
+    let signature = suppressor.allows("'BBM Shorts' not in Signature menu", now: start)
+    let accessibilityAgain = suppressor.allows("needs Accessibility", now: start.addingTimeInterval(1))
+
+    #expect(accessibility)
+    #expect(signature)
+    #expect(accessibilityAgain == false)
+}
+
 // MARK: -
 
 private func temporaryDirectory() throws -> URL {
