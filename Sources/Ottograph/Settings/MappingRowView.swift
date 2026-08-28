@@ -9,6 +9,9 @@ struct MappingRowView: View {
     let aliasChoices: [String]
     /// All of Mail's addresses — the same one may be cc'd from many aliases.
     let ccChoices: [String]
+    /// Mail has no signature by this name — flagged here, where the typo
+    /// happened, rather than as a notification at compose time.
+    let signatureIsUnknown: Bool
     @FocusState.Binding var focused: SettingsField?
     /// Called for discrete edits (picking from a menu, pressing Return)
     /// that should save without waiting for focus to move.
@@ -39,6 +42,15 @@ struct MappingRowView: View {
                 extraChoice: ("None (remove signature)", "None")
             )
             .frame(minWidth: 180)
+
+            // Always in the layout, only sometimes visible: appearing and
+            // disappearing would shift the Cc field sideways mid-edit.
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .opacity(signatureIsUnknown ? 1 : 0)
+                .help("Mail has no signature named “\(row.signature.trimmingCharacters(in: .whitespaces))”. Pick one from the list — and note it has to be attached to this alias's account to be applied.")
+                .accessibilityHidden(!signatureIsUnknown)
+                .accessibilityLabel("Unknown signature name")
 
             PickableField(
                 text: $row.autoCc,

@@ -121,6 +121,21 @@ final class SettingsModel {
         return emailAddresses.filter { !taken.contains($0.lowercased()) }
     }
 
+    /// True when a row names a signature Mail doesn't have. A typo here
+    /// would otherwise stay invisible until the alias is next used in a
+    /// compose window, surfacing as a failure notification long after the
+    /// mistake — with the list of real names sitting right there in the
+    /// picker the whole time.
+    ///
+    /// Only meaningful once Mail's list has actually loaded: with Mail
+    /// closed, or Automation declined, `signatureNames` is empty and every
+    /// row would otherwise be flagged wrong.
+    func namesUnknownSignature(_ row: Row) -> Bool {
+        let name = row.signature.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty, name != "None", !signatureNames.isEmpty else { return false }
+        return !signatureNames.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+    }
+
     func removeRow(id: Row.ID) {
         rows.removeAll { $0.id == id }
     }

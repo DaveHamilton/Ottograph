@@ -166,6 +166,28 @@ func aliasPickerExcludesTakenAddresses() throws {
     #expect(model.aliasChoices(for: model.rows[0].id).contains("dave@example.com"))
 }
 
+@MainActor
+@Test("A signature name Mail doesn't have is flagged — but only once Mail has been read")
+func flagsUnknownSignatureNames() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let model = SettingsModel(store: ConfigStore(directory: directory))
+    let typo = SettingsModel.Row(alias: "dave@example.com", signature: "Wrok")
+
+    // Mail not read yet: flagging everything would be noise, not help.
+    #expect(model.namesUnknownSignature(typo) == false)
+
+    model.signatureNames = ["Work", "Personal"]
+    #expect(model.namesUnknownSignature(typo) == true)
+    #expect(model.namesUnknownSignature(SettingsModel.Row(signature: "Work")) == false)
+    #expect(model.namesUnknownSignature(SettingsModel.Row(signature: "work")) == false)
+    #expect(model.namesUnknownSignature(SettingsModel.Row(signature: "")) == false)
+    // "None" is Ottograph's own word for the Mail menu item, not a
+    // signature Mail would ever list.
+    #expect(model.namesUnknownSignature(SettingsModel.Row(signature: "None")) == false)
+}
+
 // MARK: -
 
 private func temporaryDirectory() throws -> URL {

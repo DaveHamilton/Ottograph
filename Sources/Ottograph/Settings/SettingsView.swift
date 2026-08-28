@@ -34,6 +34,7 @@ struct SettingsView: View {
                             signatureNames: model.signatureNames,
                             aliasChoices: model.aliasChoices(for: row.id),
                             ccChoices: model.emailAddresses,
+                            signatureIsUnknown: model.namesUnknownSignature(row),
                             focused: $focused,
                             onCommit: model.save,
                             onDelete: {
