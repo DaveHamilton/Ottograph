@@ -135,12 +135,16 @@ gh release create "v${VERSION}" "$DMG" --title "Ottograph ${VERSION}" --notes-fi
 # described: every enclosure the feed advertises has to be downloadable.
 echo "==> Verifying every download the feed advertises"
 missing=0
+# Not `status`: that's a read-only builtin in zsh (an alias for $?), and
+# assigning to it aborts the script — which is how this check managed to
+# crash *after* publishing the 0.11.4 release. `zsh -n` won't catch it;
+# it's a runtime error, not a syntax one.
 for url in ${(f)"$(grep -o 'url="https://[^\"]*\.dmg"' "$FEED" | sed 's/^url="//; s/"$//')"}; do
-	status=$(curl -sIL -o /dev/null -w '%{http_code}' "$url" || echo 000)
-	if [[ "$status" == "200" ]]; then
+	http_code=$(curl -sIL -o /dev/null -w '%{http_code}' "$url" || echo 000)
+	if [[ "$http_code" == "200" ]]; then
 		echo "  ok   $url"
 	else
-		echo "  $status  $url" >&2
+		echo "  $http_code  $url" >&2
 		missing=1
 	fi
 done
