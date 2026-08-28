@@ -103,6 +103,26 @@ struct SettingsView: View {
                 .disabled(!model.loginItemSupported)
                 .onChange(of: model.startAtLogin) { model.applyLoginItem() }
 
+            // Footer for the settings above, and only those: it belongs
+            // under what it describes. Below the updates section it would
+            // read as covering the auto-update toggle, which is the one
+            // control here that doesn't go through the config file at all.
+            HStack(alignment: .firstTextBaseline) {
+                Text(statusLine)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Only as a fallback: an unbundled build has no updater, so
+                // the section below is hidden and the version would
+                // otherwise not appear anywhere.
+                if !model.updatesSupported {
+                    Spacer(minLength: 12)
+                    Text(versionLine)
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
             if model.updatesSupported {
                 Divider()
 
@@ -123,24 +143,6 @@ struct SettingsView: View {
                 Text("\(versionLine) — \(model.lastUpdateCheckDescription)")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-            }
-
-            Divider()
-
-            HStack(alignment: .firstTextBaseline) {
-                Text(statusLine)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                // Only as a fallback: an unbundled build has no updater, so
-                // the section above is hidden and the version would
-                // otherwise disappear with it.
-                if !model.updatesSupported {
-                    Spacer(minLength: 12)
-                    Text(versionLine)
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                }
             }
         }
         .padding(16)
