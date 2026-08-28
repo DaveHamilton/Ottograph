@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import Sparkle
 
 /// Editable view-state for the Settings window, loaded from and saved back
 /// to the JSON config. The signature column uses a UI convention: empty
@@ -31,14 +32,52 @@ final class SettingsModel {
     var mailLoadStatus = ""
     var saveStatus = ""
 
+    /// Sparkle keeps this in its own UserDefaults, deliberately not in
+    /// config.json: the engine hot-reloads that file and has no business
+    /// knowing about updates, and a config write could stomp Sparkle's
+    /// own state. Mirrored here so SwiftUI can observe it.
+    var automaticUpdates = false
+    var lastUpdateCheck: Date?
+
     /// Called after a successful save so the app can refresh menu titles.
     var onSaved: (() -> Void)?
 
     private let store: ConfigStore
+    private let updater: SPUUpdater?
 
-    init(store: ConfigStore) {
+    /// No updater under `swift run` — there's no Info.plist for Sparkle to
+    /// read a feed out of, so the whole section is hidden rather than
+    /// shown as dead controls.
+    var updatesSupported: Bool { updater != nil }
+
+    init(store: ConfigStore, updater: SPUUpdater? = nil) {
         self.store = store
+        self.updater = updater
+        automaticUpdates = updater?.automaticallyChecksForUpdates ?? false
+        lastUpdateCheck = updater?.lastUpdateCheckDate
         load()
+    }
+
+    func applyAutomaticUpdates() {
+        updater?.automaticallyChecksForUpdates = automaticUpdates
+    }
+
+    /// Sparkle drives its own UI from here; the only thing to do
+    /// afterwards is re-read the timestamp it stamps on completion.
+    func checkForUpdatesNow() {
+        guard let updater else { return }
+        updater.checkForUpdates()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            self?.lastUpdateCheck = updater.lastUpdateCheckDate
+        }
+    }
+
+    var lastUpdateCheckDescription: String {
+        guard let lastUpdateCheck else { return "never checked for updates" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "last checked \(formatter.localizedString(for: lastUpdateCheck, relativeTo: Date()))"
     }
 
     func load() {

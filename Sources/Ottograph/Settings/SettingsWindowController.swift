@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Sparkle
 
 /// Hosts the SwiftUI settings view in a plain NSWindow (the app uses the
 /// AppKit lifecycle, so there's no SwiftUI Settings scene to lean on).
@@ -7,8 +8,8 @@ import SwiftUI
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let model: SettingsModel
 
-    init(store: ConfigStore, onSaved: @escaping () -> Void) {
-        let model = SettingsModel(store: store)
+    init(store: ConfigStore, updater: SPUUpdater?, onSaved: @escaping () -> Void) {
+        let model = SettingsModel(store: store, updater: updater)
         model.onSaved = onSaved
         self.model = model
 

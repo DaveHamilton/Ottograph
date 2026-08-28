@@ -103,6 +103,28 @@ struct SettingsView: View {
                 .disabled(!model.loginItemSupported)
                 .onChange(of: model.startAtLogin) { model.applyLoginItem() }
 
+            if model.updatesSupported {
+                Divider()
+
+                // The manual check lives in the menu bar menu too — that's
+                // the app menu for a menu-bar-only app, and where macOS
+                // users look for it. This pairing is the settings half of
+                // the convention: the preference, plus enough state that
+                // the button isn't just a duplicate command.
+                HStack(alignment: .firstTextBaseline) {
+                    Toggle("Automatically check for updates", isOn: $model.automaticUpdates)
+                        .onChange(of: model.automaticUpdates) { model.applyAutomaticUpdates() }
+                    Spacer(minLength: 12)
+                    Button("Check Now", action: model.checkForUpdatesNow)
+                }
+                // What you're running and how current it is are the same
+                // question, so they share a line rather than sitting in
+                // opposite corners.
+                Text("\(versionLine) — \(model.lastUpdateCheckDescription)")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
             Divider()
 
             HStack(alignment: .firstTextBaseline) {
@@ -110,10 +132,15 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 12)
-                Text(versionLine)
-                    .font(.callout)
-                    .foregroundStyle(.tertiary)
+                // Only as a fallback: an unbundled build has no updater, so
+                // the section above is hidden and the version would
+                // otherwise disappear with it.
+                if !model.updatesSupported {
+                    Spacer(minLength: 12)
+                    Text(versionLine)
+                        .font(.callout)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(16)
