@@ -132,6 +132,23 @@ entitlement** (`Ottograph.entitlements`). It's needed for exactly one feature:
 reading Mail's signature and address lists for the Settings pickers. Drop it
 and that silently breaks while everything else keeps working.
 
+**A Sparkle update keeps the Accessibility grant; a hand-swapped bundle
+doesn't.** Verified on 0.11.2 → 0.11.3 across two Macs: the app updated and
+came straight back to "Watching Mail". But replacing `Ottograph.app` by hand
+(`rm -rf` + `cp -R`) *stales the TCC entry* even though the designated
+requirement is byte-identical — the app relaunches saying the permission is
+needed. This looks exactly like a signing regression and isn't one. It also
+means a manual downgrade can't be used to test whether an update preserved
+the grant: the downgrade itself breaks it, so the result is unattributable.
+Test updates on a machine where the app was installed normally.
+
+**`generate_appcast` emits binary deltas once two versions exist**, and a
+delta's enclosure URL is not a `.dmg`, so `appcast.sh`'s per-tag URL rewrite
+skipped it and left a placeholder domain in the feed. Deltas are off
+(`--maximum-deltas 0`). Note this only appears on the *second* Sparkle
+release — the first has nothing to diff against, so testing one release
+proves nothing about the next.
+
 **The Sparkle private key is unrecoverable.** It lives in the login keychain;
 every installed copy trusts only its public half, baked into `Info.plist` by
 `build-app.sh`. Lose it and no existing install can ever be updated again —
