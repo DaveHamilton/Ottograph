@@ -98,6 +98,26 @@ forward) are invisible to it. The `message signature` property genuinely works
 — but only on windows AppleScript created, which is useless in practice. This
 is why the engine uses Accessibility.
 
+**Mail's compose controls have stable `AXIdentifier`s; its menu items
+don't.** Verified against Mail 16.0 on macOS 26.6.2 with
+`Scripts/ax-probe.swift`. The controls carry `popup_from`,
+`popup_signature`, `Mail.toField`, `Mail.ccField`, `Mail.bccField`, and
+`Mail.subjectField` — structural, locale-independent, and one attribute
+read instead of the two-hop `AXTitleUIElement` → value round trip that
+title matching needs. Control *discovery* should use them.
+
+Menu items are the opposite: every item in both popups reports
+`_popUpItemAction:`, which is the selector, not an identity. So choosing a
+signature still has to match on title. That's fine — signature names are
+user data, not Mail's UI. The one exception is `"None"`, which *is* a
+localized Mail string; it is reliably item 0 of the Signature menu, so
+structure covers it if the title ever fails.
+
+**Signature names are not unique within the menu.** A real menu contained
+"GG Short" and "MGG Short" twice each. `first(where: title == target)`
+takes the earlier, and the post-apply check compares by title too — so
+applying the wrong one of a duplicated pair would verify as success.
+
 **Setting the Signature popup's `AXValue` silently does nothing.** The only
 thing that works is pressing the popup to open its menu and pressing the menu
 item. Verified directly against Mail.
