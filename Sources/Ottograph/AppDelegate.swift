@@ -80,7 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Optional ⇧⌘D takeover: registered only while Mail is frontmost so
         // Mail's Send shortcut routes to delayed send without stealing ⇧⌘D
-        // from any other app.
+        // from any other app. Outside a compose window it passes through to
+        // Send Again — see `sendShortcutPressed`.
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
             selector: #selector(frontAppChanged),
@@ -95,14 +96,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateSendTakeover() {
-        let mailIsFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.mail"
+        let mailIsFront = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == MailMenu.bundleIdentifier
         if store.config.takeOverSend && mailIsFront {
             guard sendTakeoverHotKey == nil else { return }
             sendTakeoverHotKey = HotKey(
                 keyCode: UInt32(kVK_ANSI_D),
                 carbonModifiers: UInt32(cmdKey | shiftKey)
             ) { [weak self] in
-                self?.sendDelayed()
+                self?.sendShortcutPressed()
             }
         } else {
             sendTakeoverHotKey = nil
@@ -115,6 +116,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ? "\(Int(seconds) / 60) Minute\(Int(seconds) / 60 == 1 ? "" : "s")"
             : "\(Int(seconds)) Seconds"
         return "Send in \(amount)  (⌃⌥⌘S)"
+    }
+
+    /// ⇧⌘D, once we've taken it over. Mail's own ⇧⌘D means two different
+    /// things depending on what's key — Send in a compose window, Message >
+    /// Send Again in the viewer — and registering a global hot key claims
+    /// both. Only the first is ours to replace, so route on Mail's answer
+    /// rather than assume: Send Later…'s enabled state *is* "a sendable
+    /// compose window is key". When it isn't, hand the keystroke back to
+    /// Send Again, which is what Mail would have done with it.
+    private func sendShortcutPressed() {
+        guard !DelayedSend.isAvailable else {
+            sendDelayed()
+            return
+        }
+        guard !SendAgain.perform() else { return }
+        // Neither command applies — a compose window with no recipient yet,
+        // say. Run the delayed send anyway so its diagnosis reaches the
+        // user; silently eating the keystroke is the one bad answer.
+        sendDelayed()
     }
 
     @objc private func sendDelayed() {

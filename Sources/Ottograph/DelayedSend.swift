@@ -16,49 +16,43 @@ enum DelayedSend {
         case failed(String)
     }
 
+    /// Use the Message > Send Later > Send Later… menu bar item rather than
+    /// the toolbar button — it's always present regardless of toolbar
+    /// customization, and pressing it via AX doesn't visibly open any menu.
+    /// Its enabled state also doubles as validation: Mail disables it
+    /// unless a sendable compose window is key.
+    static let menuPath = ["Message", "Send Later", "Send Later…"]
+
+    /// True when there's a compose window Mail would let us schedule. This
+    /// is what routes the ⇧⌘D takeover: asking Mail is cheaper and more
+    /// honest than inspecting the focused window ourselves, and it's the
+    /// same condition `schedule` re-checks before pressing.
+    static var isAvailable: Bool {
+        MailMenu.isEnabled(itemAt: menuPath)
+    }
+
     static func schedule(afterSeconds delay: TimeInterval, onOutcome: (Outcome) -> Void) {
-        guard let mail = NSRunningApplication
-            .runningApplications(withBundleIdentifier: "com.apple.mail").first else {
+        guard let mail = MailMenu.application() else {
             onOutcome(.failed("Mail isn't running"))
             return
         }
-        let app = AXUIElementCreateApplication(mail.processIdentifier)
-        AX.limitMessagingTime(for: app)
-        guard let rawWindow = AX.attribute(app, kAXFocusedWindowAttribute),
+        guard let rawWindow = AX.attribute(mail.element, kAXFocusedWindowAttribute),
               CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else {
             onOutcome(.failed("No focused Mail window"))
             return
         }
         let window = rawWindow as! AXUIElement
 
-        // Use the Message > Send Later > Send Later… menu bar item rather
-        // than the toolbar button — it's always present regardless of
-        // toolbar customization, and pressing it via AX doesn't visibly
-        // open any menu. Its enabled state also doubles as validation
-        // (it's disabled unless a sendable compose window is key).
-        guard let rawBar = AX.attribute(app, kAXMenuBarAttribute),
-              CFGetTypeID(rawBar) == AXUIElementGetTypeID() else {
-            onOutcome(.failed("Couldn't read Mail's menu bar"))
-            return
-        }
-        let menuBar = rawBar as! AXUIElement
-        guard let messageMenu = AX.children(of: menuBar)
-                .first(where: { AX.title(of: $0) == "Message" })
-                .flatMap({ AX.children(of: $0).first }),
-              let sendLaterItem = AX.children(of: messageMenu)
-                .first(where: { AX.title(of: $0) == "Send Later" }),
-              let submenu = AX.children(of: sendLaterItem).first,
-              let customItem = AX.children(of: submenu)
-                .first(where: { AX.title(of: $0) == "Send Later…" }) else {
+        guard let customItem = MailMenu.item(at: menuPath, in: mail.element) else {
             onOutcome(.failed("Message > Send Later > Send Later… not found"))
             return
         }
 
-        mail.activate(options: [])
+        mail.running.activate(options: [])
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         usleep(400_000)
 
-        guard (AX.attribute(customItem, kAXEnabledAttribute) as? Bool) ?? false else {
+        guard MailMenu.isEnabled(customItem) else {
             onOutcome(.failed("Send Later unavailable — is a compose window with a recipient focused?"))
             return
         }

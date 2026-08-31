@@ -148,6 +148,18 @@ AX opens no visible menu, and the item's enabled state doubles as validation
 (it's disabled unless a sendable compose window is key). The sheet's
 `AXDateTimeArea` accepts an exact `Date` — no stepper clicking.
 
+**⇧⌘D is two of Mail's commands, and a global hot key claims both.** In a
+compose window it's Send; in the viewer with a sent message selected it's
+`Message > Send Again`. Registering the takeover hot key intercepts the
+keystroke unconditionally, so Send Again silently stopped working while the
+takeover was on. `AppDelegate.sendShortcutPressed` routes instead of
+assuming: `Send Later…`'s enabled state *is* Mail's own "a sendable compose
+window is key", so when it's disabled the press goes to `Message > Send
+Again`, and when neither applies the delayed-send path still runs so its
+diagnosis reaches the user. Don't reimplement this by scanning the focused
+window for compose controls — Mail's menu validation already knows, in one
+attribute read.
+
 **An accessory app has no menu bar, so text fields have no cut/copy/paste.**
 Nothing supplies the standard Edit-menu key equivalents. `AppDelegate`
 installs an `NSApp.mainMenu` that stays invisible under this activation policy

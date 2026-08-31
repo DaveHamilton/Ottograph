@@ -151,6 +151,11 @@ frontmost, so muscle memory gets the regret window too. The hot key is only
 registered while Mail is frontmost, so no other app loses ⇧⌘D. Send in the
 toolbar and the Message menu still send immediately.
 
+Mail's ⇧⌘D means two things, and the takeover only replaces one of them: in
+the viewer, with a sent message selected, it's **Message > Send Again**, and
+it still is. Ottograph asks Mail which command applies before acting, so the
+shortcut keeps both of its jobs.
+
 ## Feedback and status
 
 The menu bar glyph is struck through while Ottograph is paused, so a paused
