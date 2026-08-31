@@ -70,9 +70,11 @@ GitHub Releases.
 | `LoginItem.swift` | SMAppService registration. |
 | `Config.swift` | JSON config model + store, hot-reloaded from disk. |
 | `Log.swift` | Unified logging, so diagnostics outlive a Finder launch. |
+| `RepeatSuppressor.swift` | Drops a message that repeats inside a window. |
 | `Diagnostics.swift` | Builds a bug report: versions, AX trust, recent log. |
 | `Tests/OttographTests` | The pure logic only — the engine needs a live Mail. |
 | `docs/appcast.xml` | Sparkle update feed, served by GitHub Pages. Generated. |
+| `.github/workflows/ci.yml` | Every push: build, test, and assemble the bundle. |
 | `Settings/` | SwiftUI settings window, its model, and Mail introspection. |
 
 User config lives at `~/Library/Application Support/Ottograph/config.json` —
@@ -121,6 +123,33 @@ applying the wrong one of a duplicated pair would verify as success.
 **Setting the Signature popup's `AXValue` silently does nothing.** The only
 thing that works is pressing the popup to open its menu and pressing the menu
 item. Verified directly against Mail.
+
+**Register the AXObserver's run loop source in `.commonModes`.** With
+`.defaultMode` — the obvious choice — notifications are not delivered while
+the run loop is in event-tracking mode, which is to say while a menu is
+open or a window is being dragged. They queue until it returns. This went
+unnoticed for a long time because the poll quietly covered for it. The mode
+passed to `CFRunLoopRemoveSource` has to match the one used to add, or the
+source is never actually removed.
+
+**Every AX call is a synchronous IPC round trip, and the default timeout is
+~6 seconds *per call*.** A single scan makes hundreds of them, so a
+beachballing Mail would hang Ottograph's main thread — freezing the menu
+bar item and the Settings window along with it, which reads as Ottograph
+having crashed rather than Mail stalling. `AX.limitMessagingTime(for:)`
+caps it at two seconds on the application element, which covers every
+element beneath it.
+
+**A condition that persists must not be logged every tick.** The engine
+re-evaluates once a second, so a missing Accessibility grant wrote ~1800
+identical lines per half hour — and half an hour is exactly the window Copy
+Diagnostics captures, so the report became a wall of repeats with
+everything useful pushed out of it. The feature added to explain a problem
+stopped working precisely when there was a problem to explain.
+`RepeatSuppressor` allows one line per minute per distinct message: enough
+to show the condition is ongoing, not enough to bury its neighbours. The
+menu's status line is deliberately exempt — it's cheap, and it should
+always read as current.
 
 **Don't verify a signature apply synchronously.** Mail updates the popup's
 readable value on its own late schedule. Checking right after the press reports
@@ -183,8 +212,15 @@ error and drops info entirely. Logging the engine's activity at info level
 therefore produced a Copy Diagnostics report containing only failures, on
 a machine that was working — the feature looked like it worked, because it
 produced output. `Log.note()` is the activity level and uses `notice()`;
-`Log.error()` is for failures. Note also that `log` is a zsh builtin that
-shadows `/usr/bin/log`, so a check from a zsh script needs the full path.
+`Log.error()` is for failures.
+
+Two zsh traps sit next to this, both of which cost real debugging. `log` is
+a zsh builtin that shadows `/usr/bin/log`, so a check written in a zsh
+script needs the full path or it silently measures nothing. And `status` is
+a *read-only* builtin — an alias for `$?` — so `status=$(...)` aborts the
+script at runtime. `zsh -n` catches neither: they are runtime errors, not
+syntax. The second one shipped in `release.sh`'s enclosure check and killed
+it mid-release, on that code path's first ever execution.
 
 Messages are logged `.public` deliberately: the default redacts interpolated
 strings, which would replace every alias and signature name with `<private>`
@@ -276,6 +312,18 @@ Guidelines that keep this honest:
 
 - **Prove the mechanism, not the log line.** A successful log can hide a retry
   that already happened. Check the state the user would see.
+- **Beware the silent success — output that is present but wrong.** This is
+  the failure mode this project keeps producing, because so much of it is
+  inference about another app's state. Real examples: an address parsed to
+  `<dave@example.com` and cheerfully reported as "no mapping"; an appcast
+  summary that greped for an attribute the feed writes as an element, so it
+  printed an empty list indistinguishable from a lost entry; activity
+  logged at a level `log show` discards, so Copy Diagnostics returned a
+  plausible report containing none of the applies; and a release guard that
+  aborted before checking anything while exiting as though the check had
+  failed. Every one of them ran, produced output, and looked fine. So when
+  verifying, ask what should be *present* and confirm it by name — don't
+  accept "it printed something" as evidence.
 - **Clean up after tests**: close test compose windows, delete anything left in
   the Send Later mailbox before it actually sends, restore the clipboard, and
   never leave a second instance running.
@@ -296,11 +344,19 @@ Guidelines that keep this honest:
   assert something already true — the poll timer, the AXObserver's run loop
   source, and AppDelegate all run on the main run loop, and its per-window
   state has no locking of its own.
+- Tests use swift-testing (`import Testing`). Two things to know: `#expect`
+  wraps its expression in a closure with an immutable capture, so it cannot
+  call a `mutating` method — bind the result to a local first. And the
+  executable target is testable directly (`dependencies: ["Ottograph"]`);
+  no library/executable split is needed.
 - One type per file, grouped by feature (`Settings/`).
 - Comments explain *why*, not what — especially around the workarounds above,
   since every one of them looks like a bug until you know the reason.
-- English UI labels are matched by name ("From", "Signature", "Send Later…",
-  "Schedule"). Localization would need a different approach.
+- English UI labels are still matched by name ("From", "Signature",
+  "Send Later…", "Schedule"), but only the *menu items* have to be. The
+  compose controls carry stable `AXIdentifier`s (see the constraint above),
+  and discovery should move to them — that is most of the way to
+  localization, and removes the heuristic fallbacks at the same time.
 - Commit messages: what changed and *why*, with the reasoning behind non-obvious
   fixes preserved.
 
