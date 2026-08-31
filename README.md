@@ -248,6 +248,9 @@ as the same app and the Accessibility grant carries across them.
       flags a signature name Mail doesn't have instead of letting it fail
       silently at compose time; and an alias whose address Mail wraps in
       invisible formatting characters no longer quietly gets nothing
+- [x] v0.11.5 — the ⇧⌘D takeover no longer costs you Message > Send Again:
+      outside a compose window the shortcut passes through to Mail's other
+      meaning for it, decided by Mail's own menu validation
 - [ ] Localization-proof popup detection — Mail turns out to expose stable
       identifiers (`popup_from`, `popup_signature`, `Mail.ccField`),
       confirmed against Mail 16.0 with `Scripts/ax-probe.swift`, so
