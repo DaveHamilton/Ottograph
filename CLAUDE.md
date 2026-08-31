@@ -64,6 +64,8 @@ GitHub Releases.
 | `SignatureEngine.swift` | The engine: watches compose windows, applies signatures and auto-Cc. |
 | `AX.swift` | Thin helpers over the AXUIElement C API. |
 | `DelayedSend.swift` | "Send in N seconds" via Mail's own Send Later. |
+| `MailMenu.swift` | Mail's menu bar: find an item by title path, read its enabled state. |
+| `SendAgain.swift` | ⇧⌘D outside a compose window, passed back to Mail. |
 | `HotKey.swift` | Carbon global hot keys. |
 | `MenuBarIcon.swift` | Template glyph, normal and struck-through (paused). |
 | `Notifier.swift` | UNUserNotificationCenter wrapper with repeat suppression. |
@@ -346,6 +348,14 @@ Guidelines that keep this honest:
 - Test against real user-opened windows (⌘N, reply, forward), not just
   script-created ones. They behave differently — that difference is the whole
   reason for the Accessibility design.
+- **A Linux session can't build this, let alone verify it.** Claude Code on
+  the web runs in a Linux container with no Swift toolchain, and this is an
+  AppKit/Carbon/AX app that wouldn't compile there if there were one. Work
+  authored that way is inspection-only: say so plainly in the commit or PR,
+  name the assumption most worth checking against live Mail, and leave the
+  build and the release to a Mac. The temptation is to describe untested
+  code in the same voice as tested code — which is the silent-success
+  failure above, aimed at the reader instead of at Mail.
 
 ## Conventions
 
