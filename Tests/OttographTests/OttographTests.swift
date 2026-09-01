@@ -30,6 +30,39 @@ func stripsFormattingMarks() {
     #expect(SignatureEngine.emailAddress(in: "Dave \u{200E}<dave@example.com>") == "dave@example.com")
 }
 
+
+// MARK: - Reading a Cc pill
+
+@Test("A Contacts-resolved Cc pill reduces to the same address as a bare one")
+func parsesCcTokenFormats() {
+    // Mail renders a pill it resolved against Contacts as "Name <addr>",
+    // with bidi isolates around the address, and an unresolved one as the
+    // bare address. Comparing those strings whole made an address that was
+    // already in the field look missing, so auto-Cc re-added it — and the
+    // rewrite folded the pill's name into the next recipient, leaving
+    // "Otto Graph , otto@example.com <otto@example.com>".
+    #expect(SignatureEngine.tokenAddress("otto@example.com") == "otto@example.com")
+    #expect(SignatureEngine.tokenAddress("Otto Graph <otto@example.com>") == "otto@example.com")
+    #expect(
+        SignatureEngine.tokenAddress("Otto Graph <\u{2066}otto@example.com\u{2069}>")
+            == "otto@example.com"
+    )
+    #expect(SignatureEngine.tokenAddress("  \u{2068}otto@example.com\u{2069}  ") == "otto@example.com")
+}
+
+@Test("A display name containing an @ doesn't get mistaken for the address")
+func tokenAddressPrefersTheBrackets() {
+    #expect(SignatureEngine.tokenAddress("@otto <otto@example.com>") == "otto@example.com")
+    #expect(SignatureEngine.tokenAddress("Otto <Graph> <otto@example.com>") == "otto@example.com")
+}
+
+@Test("A pill with nothing bracketed falls back to the whole cleaned value")
+func tokenAddressFallsBack() {
+    #expect(SignatureEngine.tokenAddress("Otto Graph") == "Otto Graph")
+    #expect(SignatureEngine.tokenAddress("<otto@example.com>,") == "otto@example.com")
+    #expect(SignatureEngine.tokenAddress("") == "")
+}
+
 // MARK: - Config
 
 @Test("Optional settings absent from an older config fall back, not crash")

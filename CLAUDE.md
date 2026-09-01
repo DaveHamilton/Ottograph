@@ -173,6 +173,24 @@ only reach the message model when the field loses focus — so focus in, then
 restore focus. Dedupe must strip invisible Unicode bidi marks that Mail wraps
 around stored addresses, or every re-switch adds a duplicate.
 
+**A Cc pill reads back as `Name <addr>` once Mail resolves it against
+Contacts.** An unresolved pill's `AXValue` is the bare address; a resolved
+one's is `Otto Graph <\u{2066}otto@example.com\u{2069}>`. Comparing that
+string whole against the config's address makes an address that *is* already
+in the field look missing, so auto-Cc rewrites the field — and Mail's parser
+mishandles a comma-separated list containing angle brackets, folding
+`Otto Graph <otto@example.com>, otto@example.com` into a **single** recipient
+named `Otto Graph , otto@example.com`. That is the whole bug: it needs a
+second `ensureCc` pass (a signature retry replays the block) landing after
+Mail has resolved the pill, which is why it read as "correct for a blink,
+then wrong". `tokenAddress` reduces both forms to the address before
+comparing. Two things verified against Mail 16.0 on macOS 26 and worth not
+re-deriving: quoting the display name does not help, and neither does a
+semicolon or newline separator — **a list of bare addresses is the only form
+that tokenizes back into one pill per recipient**, so that is what a rewrite
+must write. `AXSelectedText`/`AXSelectedTextRange` are not settable on the
+field, so there is no append; every write replaces the whole thing.
+
 **Use `Message > Send Later > Send Later…`, not the toolbar button.** The menu
 is always present regardless of toolbar customization, pressing a menu item via
 AX opens no visible menu, and the item's enabled state doubles as validation

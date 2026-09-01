@@ -264,7 +264,9 @@ final class SignatureEngine {
 
             // Auto-Cc first — it's idempotent (existing tokens are read
             // for dedupe), so a signature retry replaying this block is
-            // harmless.
+            // harmless. That idempotence rests on `tokenAddress` reading a
+            // Contacts-resolved pill correctly; without it the replay is
+            // what corrupts the recipient.
             if let ccAddress {
                 ensureCc(ccAddress, controls: compose, forEmail: email)
             }
@@ -410,23 +412,28 @@ final class SignatureEngine {
     // MARK: - Auto-Cc
 
     /// Adds `address` to the compose window's Cc field if it isn't there
-    /// already. A token field renders each address as a pill (a child
-    /// AXTextField whose value is the plain address), so dedupe reads the
-    /// existing tokens. Setting the field's value tokenizes instantly, but
-    /// the message model only picks the recipient up on focus-out — so the
-    /// field is focused briefly and focus is then handed back to wherever
-    /// it was.
+    /// already. A token field renders each recipient as a pill (a child
+    /// AXTextField), so dedupe reads the existing tokens. Setting the
+    /// field's value tokenizes instantly, but the message model only picks
+    /// the recipient up on focus-out — so the field is focused briefly and
+    /// focus is then handed back to wherever it was.
+    ///
+    /// Both halves of this deliberately go through `tokenAddress`: a pill
+    /// Mail has resolved against Contacts reads back as "Name <addr>", not
+    /// as the bare address, and comparing those strings whole makes an
+    /// address that is already present look missing.
     private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String) {
         guard let ccField = controls.cc else {
             report("No Cc field found for \(email)", failure: true)
             return
         }
 
-        let existingTokens = AX.children(of: ccField)
+        let existingAddresses = AX.children(of: ccField)
             .compactMap { AX.stringValue(of: $0) }
-            .map(Self.cleanAddress)
-        let want = Self.cleanAddress(address)
-        guard !existingTokens.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) else {
+            .map(Self.tokenAddress)
+            .filter { !$0.isEmpty }
+        let want = Self.tokenAddress(address)
+        guard !existingAddresses.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) else {
             return
         }
 
@@ -440,7 +447,14 @@ final class SignatureEngine {
             previousFocus = focused
         }
 
-        let combined = (existingTokens + [want]).joined(separator: ", ")
+        // Bare addresses only. Setting this attribute replaces the whole
+        // field, and Mail's parser mishandles a comma-separated list that
+        // contains angle brackets: "A <a@x>, b@x" comes back as a *single*
+        // recipient whose display name is "A , b@x". Verified against Mail
+        // 16.0 — quoting the display name doesn't help, and neither does a
+        // semicolon or a newline separator. A list of plain addresses is
+        // the one form that tokenizes back into one pill per recipient.
+        let combined = (existingAddresses + [want]).joined(separator: ", ")
         guard AXUIElementSetAttributeValue(ccField, kAXValueAttribute as CFString, combined as CFTypeRef) == .success else {
             report("Couldn't set Cc for \(email)", failure: true)
             log("Couldn't set Cc \(address) for \(email)")
@@ -545,6 +559,23 @@ final class SignatureEngine {
     nonisolated static func cleanAddress(_ s: String) -> String {
         String(String.UnicodeScalarView(s.unicodeScalars.filter { !formattingMarks.contains($0) }))
             .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The address inside a Cc/To token's value. Mail renders a pill it has
+    /// resolved against Contacts as "Name <addr>" (with bidi isolates around
+    /// the address) and an unresolved one as the bare address, so the two
+    /// forms have to be reduced to the same thing before they're compared.
+    /// The brackets are the delimiter rather than "the word with an @",
+    /// because a display name can contain one ("@dave <dave@example.com>").
+    nonisolated static func tokenAddress(_ raw: String) -> String {
+        let cleaned = cleanAddress(raw)
+        if let open = cleaned.lastIndex(of: "<") {
+            let rest = cleaned[cleaned.index(after: open)...]
+            if let close = rest.firstIndex(of: ">") {
+                return String(rest[..<close]).trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return cleaned.trimmingCharacters(in: CharacterSet(charactersIn: "<>,").union(.whitespaces))
     }
 
     /// Extracts the address from From-popup values like
