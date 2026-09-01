@@ -251,6 +251,10 @@ as the same app and the Accessibility grant carries across them.
 - [x] v0.11.5 — the ⇧⌘D takeover no longer costs you Message > Send Again:
       outside a compose window the shortcut passes through to Mail's other
       meaning for it, decided by Mail's own menu validation
+- [x] v0.11.6 — auto-Cc no longer mangles the recipient it just added when
+      the address is also in Contacts: Mail reports a matched recipient in a
+      different form, which read as a different address and triggered a
+      second, destructive add
 - [ ] Localization-proof popup detection — Mail turns out to expose stable
       identifiers (`popup_from`, `popup_signature`, `Mail.ccField`),
       confirmed against Mail 16.0 with `Scripts/ax-probe.swift`, so
