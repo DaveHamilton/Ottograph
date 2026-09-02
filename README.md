@@ -255,11 +255,15 @@ as the same app and the Accessibility grant carries across them.
       the address is also in Contacts: Mail reports a matched recipient in a
       different form, which read as a different address and triggered a
       second, destructive add
-- [ ] Localization-proof popup detection — Mail turns out to expose stable
-      identifiers (`popup_from`, `popup_signature`, `Mail.ccField`),
-      confirmed against Mail 16.0 with `Scripts/ax-probe.swift`, so
-      discovery can stop matching English labels entirely. Menu items have
-      no such identifiers, but signature names are user data rather than UI
+- [x] v0.11.7 — signatures apply with Mail's Format bar showing: its font
+      popups sit ahead of the header controls and were being taken for the
+      Signature popup (the first bug report). Compose controls are now found
+      by the stable identifiers Mail gives them (`popup_from`,
+      `popup_signature`, `Mail.ccField`), never by elimination — which is
+      also most of the way to localization-proof detection. Menu items have
+      no such identifiers, but signature names are user data rather than UI.
+      Settings opens tall enough for its content and scrolls to a newly
+      added mapping
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27
 
 ## Limitations
