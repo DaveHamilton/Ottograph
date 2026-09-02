@@ -3,6 +3,17 @@
     <channel>
         <title>Ottograph</title>
         <item>
+            <title>0.11.7</title>
+            <pubDate>Tue, 01 Sep 2026 20:39:01 -0400</pubDate>
+            <link>https://github.com/DaveHamilton/Ottograph</link>
+            <sparkle:fullReleaseNotesLink>https://github.com/DaveHamilton/Ottograph/releases</sparkle:fullReleaseNotesLink>
+            <sparkle:version>0.11.7</sparkle:version>
+            <sparkle:shortVersionString>0.11.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://davehamilton.github.io/Ottograph/Ottograph-0.11.7.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/DaveHamilton/Ottograph/releases/download/v0.11.7/Ottograph-0.11.7.dmg" length="3357073" type="application/octet-stream" sparkle:edSignature="NGBiYoZs8b3liGknz1IqpYsn2QhXViL2ES2DFGSetGCCoz33aaaEkTJIiQcYmNvnhuZXgWY16lsnRRBQE3tLAA=="/>
+        </item>
+        <item>
             <title>0.11.6</title>
             <pubDate>Tue, 01 Sep 2026 16:12:53 -0400</pubDate>
             <link>https://github.com/DaveHamilton/Ottograph</link>
@@ -23,17 +34,6 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:releaseNotesLink>https://davehamilton.github.io/Ottograph/Ottograph-0.11.5.md</sparkle:releaseNotesLink>
             <enclosure url="https://github.com/DaveHamilton/Ottograph/releases/download/v0.11.5/Ottograph-0.11.5.dmg" length="3553799" type="application/octet-stream" sparkle:edSignature="Dxvcm9U6pO6OcxWIjlSA335PG+XQJS11BNU4brkeOu6kbAKLQhAjBja9ZkESHKYbytdIzHWKtSFT8mKv0NceBw=="/>
-        </item>
-        <item>
-            <title>0.11.4</title>
-            <pubDate>Fri, 28 Aug 2026 00:41:12 -0400</pubDate>
-            <link>https://github.com/DaveHamilton/Ottograph</link>
-            <sparkle:fullReleaseNotesLink>https://github.com/DaveHamilton/Ottograph/releases</sparkle:fullReleaseNotesLink>
-            <sparkle:version>0.11.4</sparkle:version>
-            <sparkle:shortVersionString>0.11.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:releaseNotesLink>https://davehamilton.github.io/Ottograph/Ottograph-0.11.4.md</sparkle:releaseNotesLink>
-            <enclosure url="https://github.com/DaveHamilton/Ottograph/releases/download/v0.11.4/Ottograph-0.11.4.dmg" length="3550828" type="application/octet-stream" sparkle:edSignature="+87XLWvOgqTKMBqJmzaUwgXt7/BBPznthKt4pj3+nrYG1t+Vt4MDxTCLLcqx4eM1c2Sb3cSTO8DOsyUaZy6WBg=="/>
         </item>
     </channel>
 </rss>
