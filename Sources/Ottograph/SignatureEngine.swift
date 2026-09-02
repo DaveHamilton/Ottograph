@@ -339,6 +339,11 @@ final class SignatureEngine {
 
     /// Returns the compose window's controls if this is a compose window
     /// (i.e. it has From and Signature popups), else nil.
+    ///
+    /// Each control is recognised by identity, never by elimination — see
+    /// `ComposeControl`. A compose window has more popups than the two we
+    /// want (priority, and the Format bar's font, style and size when it's
+    /// showing), so anything not positively identified is ignored.
     private func discoverControls(in window: AXUIElement) -> ComposeControls? {
         var popups: [AXUIElement] = []
         var textFields: [AXUIElement] = []
@@ -347,31 +352,46 @@ final class SignatureEngine {
 
         var fromPopup: AXUIElement?
         var signaturePopup: AXUIElement?
-
         for popup in popups {
-            let label = AX.labelText(of: popup) ?? ""
-            let value = AX.stringValue(of: popup) ?? ""
-            if label.hasPrefix("From") || (label.isEmpty && value.contains("@")) {
-                fromPopup = fromPopup ?? popup
-            } else if label.hasPrefix("Signature")
-                || (label.isEmpty && !value.contains("@") && !value.contains("Priority")) {
-                signaturePopup = signaturePopup ?? popup
+            switch classify(popup) {
+            case .from: fromPopup = fromPopup ?? popup
+            case .signature: signaturePopup = signaturePopup ?? popup
+            default: break
             }
         }
 
         var ccField: AXUIElement?
         var subjectField: AXUIElement?
         for field in textFields {
-            let label = AX.labelText(of: field) ?? ""
-            if label.hasPrefix("Cc") {
-                ccField = ccField ?? field
-            } else if label.hasPrefix("Subject") {
-                subjectField = subjectField ?? field
+            switch classify(field) {
+            case .cc: ccField = ccField ?? field
+            case .subject: subjectField = subjectField ?? field
+            default: break
             }
         }
 
-        guard let fromPopup, let signaturePopup else { return nil }
+        guard let fromPopup else { return nil }
+        guard let signaturePopup else {
+            // A From popup with no Signature popup beside it is a compose
+            // window we can't drive, and without this line the engine would
+            // simply never mention it. A log line, not a failure banner:
+            // Mail rebuilds the header after a From change, and a scan that
+            // lands mid-rebuild can see exactly this for a moment. Suppressed
+            // because a real one recurs every tick.
+            let message = "From popup found but no Signature popup — has Mail's compose window changed? Scripts/ax-probe.swift shows what it exposes"
+            if failureLog.allows(message) { log(message) }
+            return nil
+        }
         return ComposeControls(from: fromPopup, signature: signaturePopup, cc: ccField, subject: subjectField)
+    }
+
+    /// Identifier first (one AX round trip), label only if that said
+    /// nothing (two more) — the label read is the expensive half.
+    private func classify(_ element: AXUIElement) -> ComposeControl? {
+        if let kind = ComposeControl.classify(identifier: AX.identifier(of: element), label: nil) {
+            return kind
+        }
+        return ComposeControl.classify(identifier: nil, label: AX.labelText(of: element))
     }
 
     private func collectControls(

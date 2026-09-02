@@ -55,6 +55,14 @@ enum AX {
         attribute(element, kAXDescriptionAttribute) as? String
     }
 
+    /// The developer-assigned identifier (`popup_signature`, `Mail.ccField`).
+    /// Structural rather than presentational, so it survives localisation
+    /// and costs one round trip where a label costs two. Empty reads as nil.
+    static func identifier(of element: AXUIElement) -> String? {
+        guard let id = attribute(element, kAXIdentifierAttribute) as? String, !id.isEmpty else { return nil }
+        return id
+    }
+
     /// Depth-first search for the first element passing `test`.
     static func findFirst(in element: AXUIElement, depth: Int = 0, where test: (AXUIElement) -> Bool) -> AXUIElement? {
         guard depth < 15 else { return nil }

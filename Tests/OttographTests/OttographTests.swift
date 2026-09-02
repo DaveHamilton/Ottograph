@@ -269,3 +269,42 @@ private func temporaryDirectory() throws -> URL {
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }
+
+// MARK: - Recognising the compose window's controls
+
+// These attribute values are copied from `Scripts/ax-probe.swift` run
+// against Mail 16.0 with the Format bar showing — the configuration that
+// produced the first bug report.
+
+@Test("Compose controls are recognised by their AXIdentifier")
+func classifiesByIdentifier() {
+    #expect(ComposeControl.classify(identifier: "popup_from", label: nil) == .from)
+    #expect(ComposeControl.classify(identifier: "popup_signature", label: nil) == .signature)
+    #expect(ComposeControl.classify(identifier: "Mail.ccField", label: nil) == .cc)
+    #expect(ComposeControl.classify(identifier: "Mail.subjectField", label: nil) == .subject)
+    // Real controls we don't drive must not be mistaken for ones we do.
+    #expect(ComposeControl.classify(identifier: "popup_priority", label: nil) == nil)
+    #expect(ComposeControl.classify(identifier: "Mail.toField", label: nil) == nil)
+    #expect(ComposeControl.classify(identifier: "Mail.bccField", label: nil) == nil)
+    #expect(ComposeControl.classify(identifier: "Mail.replyToField", label: nil) == nil)
+}
+
+@Test("Without identifiers, the label element identifies the control")
+func classifiesByLabel() {
+    #expect(ComposeControl.classify(identifier: nil, label: "From:") == .from)
+    #expect(ComposeControl.classify(identifier: nil, label: "Signature:") == .signature)
+    #expect(ComposeControl.classify(identifier: nil, label: "Cc:") == .cc)
+    #expect(ComposeControl.classify(identifier: nil, label: "Subject:") == .subject)
+    #expect(ComposeControl.classify(identifier: nil, label: "To:") == nil)
+}
+
+@Test("The Format bar's popups are not the Signature popup")
+func ignoresFormatBarPopups() {
+    // Font, style and size: no identifier, no label, a value that isn't
+    // an address. The old rule took the first of these as the Signature
+    // popup, pressed it, and reported the signature missing from the
+    // account. They sit before the header controls in the tree, so
+    // "first match wins" made this the common case, not the rare one.
+    #expect(ComposeControl.classify(identifier: nil, label: nil) == nil)
+    #expect(ComposeControl.classify(identifier: nil, label: "") == nil)
+}

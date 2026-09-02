@@ -275,8 +275,9 @@ as the same app and the Accessibility grant carries across them.
 - Requires the Accessibility permission (see First run above).
 - Applying a signature briefly opens the Signature popup menu on screen —
   it's the same UI action a human would take, just fast.
-- Popup identification assumes English labels ("From", "Signature",
-  "Priority") with heuristic fallbacks.
+- Compose controls are found by their accessibility identifiers, which
+  don't depend on language; the Signature menu's items and the Send Later
+  menu are still matched by their English titles.
 
 ## License
 

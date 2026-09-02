@@ -70,6 +70,7 @@ GitHub Releases.
 | `MenuBarIcon.swift` | Template glyph, normal and struck-through (paused). |
 | `Notifier.swift` | UNUserNotificationCenter wrapper with repeat suppression. |
 | `LoginItem.swift` | SMAppService registration. |
+| `ComposeControl.swift` | Which compose control an AX element is: identifier first, label second, never a guess. |
 | `Config.swift` | JSON config model + store, hot-reloaded from disk. |
 | `Log.swift` | Unified logging, so diagnostics outlive a Finder launch. |
 | `RepeatSuppressor.swift` | Drops a message that repeats inside a window. |
@@ -108,7 +109,21 @@ don't.** Verified against Mail 16.0 on macOS 26.6.2 with
 `popup_signature`, `Mail.toField`, `Mail.ccField`, `Mail.bccField`, and
 `Mail.subjectField` — structural, locale-independent, and one attribute
 read instead of the two-hop `AXTitleUIElement` → value round trip that
-title matching needs. Control *discovery* should use them.
+title matching needs. `ComposeControl.classify` uses them, with the label
+element as the only fallback.
+
+**Never identify a control by elimination.** Discovery used to take "an
+unlabeled popup whose value isn't an address or a priority" as the
+Signature popup. With the Format bar showing (View > Show Format Bar,
+which some people leave on) a compose window has three more popups —
+typeface, style, size — with no label, no identifier, and a position
+*before* the header controls. So the engine pressed the font popup,
+looked for the signature among typefaces, and reported "'X' not in
+Signature menu — is it attached to this account?" on a correctly
+configured account. The tell in the log was the post-apply check finding
+`Helvetica`. The first bug report was exactly this; it never reproduced
+here because the Format bar was hidden. That's the general lesson: test
+with Mail's optional UI *on*, not just the default layout.
 
 Menu items are the opposite: every item in both popups reports
 `_popUpItemAction:`, which is the selector, not an identity. So choosing a
@@ -392,11 +407,10 @@ Guidelines that keep this honest:
 - One type per file, grouped by feature (`Settings/`).
 - Comments explain *why*, not what — especially around the workarounds above,
   since every one of them looks like a bug until you know the reason.
-- English UI labels are still matched by name ("From", "Signature",
-  "Send Later…", "Schedule"), but only the *menu items* have to be. The
-  compose controls carry stable `AXIdentifier`s (see the constraint above),
-  and discovery should move to them — that is most of the way to
-  localization, and removes the heuristic fallbacks at the same time.
+- Compose controls are discovered by `AXIdentifier` (see the constraint
+  above), with the label element ("From:", "Signature:") as the fallback.
+  English titles are still matched for the *menu items* ("None", "Send
+  Later…", "Schedule"), which have no identifiers.
 - Commit messages: what changed and *why*, with the reasoning behind non-obvious
   fixes preserved.
 
