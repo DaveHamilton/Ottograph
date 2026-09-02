@@ -105,8 +105,12 @@ final class SettingsModel {
         saveStatus = ""
     }
 
-    func addRow() {
-        rows.append(Row())
+    /// Returns the new row's id so the view can scroll it into view.
+    @discardableResult
+    func addRow() -> Row.ID {
+        let row = Row()
+        rows.append(row)
+        return row.id
     }
 
     /// Addresses offered in a row's alias picker: everything from Mail

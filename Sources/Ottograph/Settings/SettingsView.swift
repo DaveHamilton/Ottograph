@@ -7,6 +7,8 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: SettingsModel
     @FocusState private var focused: SettingsField?
+    /// The row just added, until the list has scrolled to it.
+    @State private var rowToReveal: SettingsModel.Row.ID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -23,34 +25,58 @@ struct SettingsView: View {
                 } description: {
                     Text("Add a mapping for each From address that should get its own signature. With Mail running, your addresses and signature names appear as pickers.")
                 } actions: {
-                    Button("Add Mapping", systemImage: "plus", action: model.addRow)
+                    Button("Add Mapping", systemImage: "plus") { _ = model.addRow() }
                 }
                 .frame(minHeight: 180)
             } else {
-                List {
-                    ForEach($model.rows) { $row in
-                        MappingRowView(
-                            row: $row,
-                            signatureNames: model.signatureNames,
-                            aliasChoices: model.aliasChoices(for: row.id),
-                            ccChoices: model.emailAddresses,
-                            signatureIsUnknown: model.namesUnknownSignature(row),
-                            focused: $focused,
-                            onCommit: model.save,
-                            onDelete: {
-                                model.removeRow(id: row.id)
-                                model.save()
+                ScrollViewReader { proxy in
+                    List {
+                        ForEach($model.rows) { $row in
+                            MappingRowView(
+                                row: $row,
+                                signatureNames: model.signatureNames,
+                                aliasChoices: model.aliasChoices(for: row.id),
+                                ccChoices: model.emailAddresses,
+                                signatureIsUnknown: model.namesUnknownSignature(row),
+                                focused: $focused,
+                                onCommit: model.save,
+                                onDelete: {
+                                    model.removeRow(id: row.id)
+                                    model.save()
+                                }
+                            )
+                            .listRowSeparator(.hidden)
+                        }
+                    }
+                    .listStyle(.bordered)
+                    .frame(minHeight: 180)
+                    .onChange(of: rowToReveal) { _, id in
+                        // A row added below the fold used to appear nowhere:
+                        // the list stayed scrolled to the top and the new,
+                        // empty row was out of sight. Bring it into view.
+                        // Deferred a turn so the row exists in the list
+                        // before we ask to scroll to it.
+                        guard let id else { return }
+                        DispatchQueue.main.async {
+                            proxy.scrollTo(id, anchor: .bottom)
+                            // The list estimates the height of a row it
+                            // hasn't laid out yet, so that first scroll
+                            // lands with the new row just past the fold.
+                            // Now that it's on screen and measured, once
+                            // more lands it.
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+                                rowToReveal = nil
                             }
-                        )
-                        .listRowSeparator(.hidden)
+                        }
                     }
                 }
-                .listStyle(.bordered)
-                .frame(minHeight: 180)
             }
 
             HStack {
-                Button("Add Mapping", systemImage: "plus", action: model.addRow)
+                Button("Add Mapping", systemImage: "plus") {
+                    rowToReveal = model.addRow()
+                }
                 Text(model.mailLoadStatus)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -147,7 +173,13 @@ struct SettingsView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 680, minHeight: 560)
+        // Width only. A minHeight here doesn't mean "at least as tall as
+        // the content": the frame clamps the *proposal* and reports that,
+        // so a content that needs more overflows and is clipped at both
+        // ends — and every measurement of the view reports the clamp. The
+        // content's real minimum comes from the mapping list at its own
+        // minimum, which the window controller measures.
+        .frame(minWidth: 680)
         .onChange(of: focused) { previous, _ in
             // Leaving a field commits it. Saving here rather than on every
             // keystroke keeps partial text out of the config — which
