@@ -266,6 +266,12 @@ as the same app and the Accessibility grant carries across them.
       no such identifiers, but signature names are user data rather than UI.
       Settings opens tall enough for its content and scrolls to a newly
       added mapping
+- [x] v0.11.8 — no more CPU drain on Mail while the Mac is locked: macOS
+      reports each Mail window as Mail itself during a lock, and the scan
+      for compose windows went round that loop — around 80% CPU overnight.
+      Every tree walk is now bounded (no cycles, capped size), and the
+      engine is fully event-driven: with no compose window open it sends
+      Mail nothing at all, and the fallback check runs only while one is
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27
 
 ## Limitations
@@ -275,8 +281,8 @@ as the same app and the Accessibility grant carries across them.
   state is retained for 10 minutes to avoid re-applying on every tab switch.
   However, macOS's AX exposure of tabbed windows is flaky — popup discovery
   intermittently fails, and a From change made immediately around a tab
-  switch can occasionally be missed (the 1s fallback scan usually catches
-  it). Separate compose windows remain the well-tested path.
+  switch can occasionally be missed (the window coming back to the front
+  triggers a rescan, and the fallback check usually catches the rest). Separate compose windows remain the well-tested path.
 
 - Requires the Accessibility permission (see First run above).
 - Applying a signature briefly opens the Signature popup menu on screen —
