@@ -61,9 +61,11 @@ its **From popup** (readable) and **Signature popup** (settable) in the
 accessibility tree. Ottograph is event-driven: an AXObserver watches Mail for
 new windows and for From-popup changes, so when you pick an alias — or a
 compose window first appears — the mapped signature is selected in that
-window's Signature popup immediately, exactly like a human would. A polling
-scan (default: every `pollSeconds`, only while Mail is running) remains as a
-safety net for anything events miss, such as sleep/wake or a Mail relaunch.
+window's Signature popup immediately, exactly like a human would. Sleep/wake,
+screen unlock, and Mail launching or quitting are picked up from the system.
+A fallback re-check (starting at `pollSeconds` and backing off to 15 seconds)
+runs only while a compose window is open; with none open, Ottograph sends
+Mail nothing at all.
 Each compose window is tracked independently, and Ottograph only acts on a
 *change* of sender, so if you manually pick a different signature afterward,
 it leaves you alone.

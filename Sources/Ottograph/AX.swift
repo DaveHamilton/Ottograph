@@ -63,14 +63,60 @@ enum AX {
         return id
     }
 
-    /// Depth-first search for the first element passing `test`.
-    static func findFirst(in element: AXUIElement, depth: Int = 0, where test: (AXUIElement) -> Bool) -> AXUIElement? {
-        guard depth < 15 else { return nil }
-        if test(element) { return element }
-        for child in children(of: element) {
-            if let hit = findFirst(in: child, depth: depth + 1, where: test) { return hit }
+    /// Roles a walk never enters. While the screen is locked, Mail on macOS
+    /// 27.2 (beta 3) answers `AXWindows` — and `AXMainWindow`,
+    /// `AXFocusedWindow` — with the *application* element, and lists the
+    /// application twice among its own children. A depth-limited walk from
+    /// a "window" therefore branched app → app, app, menu bar at every
+    /// level: ~475,000 AX calls and 90+ seconds per window, once a second,
+    /// all night. Nothing we look for lives under these roles anyway.
+    static let neverEnteredRoles: Set<String> = [
+        "AXApplication", "AXMenuBar", "AXMenuBarItem", "AXMenu",
+    ]
+
+    enum WalkStep { case descend, skip, stop }
+
+    /// Depth-first, pre-order walk of everything below `root`, which every
+    /// tree search goes through so none of them can run away. Three
+    /// independent bounds, because each one alone has a way to fail: a
+    /// visited set (cycles), a depth limit, and an element cap (a tree
+    /// that is merely huge — the message viewer). `visit` gets each
+    /// element with its role, already read. Returns false if the cap hit.
+    @discardableResult
+    static func walk(
+        below root: AXUIElement, maxDepth: Int = 15, maxElements: Int = 1500,
+        _ visit: (AXUIElement, String) -> WalkStep
+    ) -> Bool {
+        var seen: Set<AXElementKey> = [AXElementKey(element: root)]
+        var stack: [(element: AXUIElement, depth: Int)] = children(of: root).reversed().map { ($0, 1) }
+        var visited = 0
+        while let (element, depth) = stack.popLast() {
+            guard seen.insert(AXElementKey(element: element)).inserted else { continue }
+            visited += 1
+            guard visited <= maxElements else { return false }
+            let role = role(of: element)
+            if neverEnteredRoles.contains(role) { continue }
+            switch visit(element, role) {
+            case .stop: return true
+            case .skip: continue
+            case .descend:
+                guard depth < maxDepth else { continue }
+                stack.append(contentsOf: children(of: element).reversed().map { ($0, depth + 1) })
+            }
         }
-        return nil
+        return true
+    }
+
+    /// Depth-first search for the first element passing `test`.
+    static func findFirst(in element: AXUIElement, where test: (AXUIElement) -> Bool) -> AXUIElement? {
+        if test(element) { return element }
+        var hit: AXUIElement?
+        walk(below: element) { candidate, _ in
+            guard test(candidate) else { return .descend }
+            hit = candidate
+            return .stop
+        }
+        return hit
     }
 
     @discardableResult

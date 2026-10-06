@@ -12,13 +12,21 @@ import Foundation
 /// Signature popup (settable). This also means Ottograph needs only the
 /// Accessibility permission — no Apple events, no Automation prompt.
 ///
-/// Architecture: event-driven with a polling fallback.
-/// - An AXObserver watches Mail for window creation and for value changes on
-///   each compose window's From popup, so reactions are immediate.
-/// - A timer still scans every `pollSeconds` as a safety net for anything
-///   events miss (sleep/wake, Mail relaunch, windows that finish building
-///   after their creation notification).
-/// - Both paths funnel into the same scan, which acts only when a window's
+/// Architecture: event-driven, with a fallback that exists only while a
+/// compose window does.
+/// - An AXObserver watches Mail's application element for window creation
+///   and focus/main-window changes, and each compose window for its own
+///   destruction and its From popup's value changes.
+/// - NSWorkspace covers what AX can't: Mail launching or quitting, Mail
+///   coming to the front, wake, and screen unlock.
+/// - A fallback timer re-checks every `pollSeconds`, backing off
+///   exponentially, but only while a compose window is visible. With none
+///   open, Ottograph sends Mail nothing at all. It used to scan every
+///   window once a second regardless, and with the screen locked that
+///   scan cost Mail most of a CPU — see `AX.neverEnteredRoles`.
+/// - A window that turns out not to be a compose window is examined only
+///   while it might still be building, then skipped by identity.
+/// - Every path funnels into the same scan, which acts only when a window's
 ///   sender *changes* (or the window is first seen), so a signature the user
 ///   picks manually afterward is left alone.
 /// - Applying a signature means opening the Signature popup's menu, which
@@ -38,6 +46,24 @@ final class SignatureEngine {
     private var lastSenderByWindow: [AXElementKey: String] = [:]
     private var windowLastSeen: [AXElementKey: Date] = [:]
     private var retryState: [AXElementKey: (email: String, attempts: Int)] = [:]
+    /// Windows found not to be compose windows, and when that was first
+    /// seen. Re-examined only within `settleSeconds` of it — a compose
+    /// window's popups can finish building after it appears — and skipped
+    /// without a single AX call after that.
+    private var notComposeSince: [AXElementKey: Date] = [:]
+    /// Compose windows in the last scan's window list. Non-empty is the
+    /// only state in which the fallback timer runs.
+    private var visibleCompose: Set<AXElementKey> = []
+    /// Per compose window: the From popup we registered for value changes
+    /// (Mail rebuilds the header, so it can be replaced), and whether the
+    /// window itself is registered for destruction.
+    private var observedFrom: [AXElementKey: AXUIElement] = [:]
+    private var observedWindows: Set<AXElementKey> = []
+    /// Consecutive fallback ticks that found nothing to do; each doubles
+    /// the next interval. Any event resets it.
+    private var quietTicks = 0
+    private var awaitingTrust = false
+    private var workspaceObservers: [(NotificationCenter, NSObjectProtocol)] = []
     private var axApp: AXUIElement?
     private var axAppPID: pid_t = -1
     /// `nonisolated(unsafe)` only so `deinit` can remove the run loop
@@ -46,6 +72,9 @@ final class SignatureEngine {
     nonisolated(unsafe) private var observer: AXObserver?
 
     private static let maxApplyAttempts = 4
+    private static let settleSeconds: TimeInterval = 3
+    private static let maxFallbackSeconds: TimeInterval = 15
+    private static let untrustedRecheckSeconds: TimeInterval = 5
 
     /// The engine re-evaluates every tick, so a persistent failure would
     /// otherwise write a line per second for as long as it persists.
@@ -90,18 +119,16 @@ final class SignatureEngine {
         } else {
             onStatus?("Watching Mail")
         }
-        scheduleTimer()
-        tick()
+        observeWorkspace()
+        refresh()
     }
 
     func stop() {
         timer?.invalidate()
         timer = nil
-        teardownObserver()
-        lastSenderByWindow.removeAll()
-        retryState.removeAll()
-        axApp = nil
-        axAppPID = -1
+        for (center, token) in workspaceObservers { center.removeObserver(token) }
+        workspaceObservers.removeAll()
+        detachFromMail()
         isRunning = false
         onStatus?("Paused")
     }
@@ -116,21 +143,33 @@ final class SignatureEngine {
         return AXIsProcessTrustedWithOptions(options)
     }
 
-    private func scheduleTimer() {
+    /// One-shot, rescheduled after every scan, so it can never outlive the
+    /// reason for it. Three states: waiting on the Accessibility grant (a
+    /// local check — sends Mail nothing), a compose window visible (backs
+    /// off from `pollSeconds` to `maxFallbackSeconds`), or no timer at all.
+    private func scheduleFallback() {
         timer?.invalidate()
-        let interval = store.config.pollSeconds
-        let timer = Timer(timeInterval: interval, repeats: true) { _ in
+        timer = nil
+        let interval: TimeInterval
+        if awaitingTrust {
+            interval = Self.untrustedRecheckSeconds
+        } else if !visibleCompose.isEmpty {
+            interval = min(store.config.pollSeconds * pow(2, Double(quietTicks)), Self.maxFallbackSeconds)
+        } else {
+            return
+        }
+        let timer = Timer(timeInterval: interval, repeats: false) { _ in
             // Added to the main run loop below, so it fires on the main actor.
-            MainActor.assumeIsolated { [weak self] in self?.tick() }
+            MainActor.assumeIsolated { [weak self] in self?.refresh(fromFallback: true) }
         }
         timer.tolerance = interval * 0.2
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
-    // MARK: - AX notifications (the event-driven path)
+    // MARK: - Events (AX and NSWorkspace)
 
-    fileprivate func handleNotification(_ name: String) {
+    fileprivate func handleNotification(_ name: String, element: AXUIElement) {
         switch name {
         case kAXWindowCreatedNotification:
             // A compose window's popups can finish building after the
@@ -138,6 +177,10 @@ final class SignatureEngine {
             scheduleScan(after: 0.3)
             scheduleScan(after: 0.8)
             scheduleScan(after: 1.5)
+        case kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification:
+            // A compose window coming back from a background tab, or one
+            // whose creation we missed. Cheap: known windows are skipped.
+            scheduleScan(after: 0.3)
         case kAXValueChangedNotification:
             // The From popup of some compose window changed. Don't react
             // instantly: Mail resets the Signature popup itself shortly
@@ -145,6 +188,13 @@ final class SignatureEngine {
             // means our work gets stomped and retried — a double blink.
             // ~300ms lets Mail settle so we apply exactly once.
             scheduleScan(after: 0.3)
+        case kAXUIElementDestroyedNotification:
+            // A compose window closed (or went to a background tab). Stop
+            // observing it now; the rescan stops the fallback if it was the
+            // last one. Its sender state is kept — see the pruning in
+            // `refresh` for why.
+            unobserve(windowKey: AXElementKey(element: element))
+            scheduleScan(after: 0.2)
         default:
             break
         }
@@ -152,8 +202,40 @@ final class SignatureEngine {
 
     private func scheduleScan(after delay: TimeInterval) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            MainActor.assumeIsolated { [weak self] in self?.tick() }
+            MainActor.assumeIsolated { [weak self] in self?.refresh() }
         }
+    }
+
+    /// What the old once-a-second poll was quietly covering for: Mail
+    /// starting (its restored windows appear without us observing it yet),
+    /// quitting, coming forward, and the Mac waking or unlocking — after
+    /// which AX can report a different set of windows.
+    private func observeWorkspace() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let mailEvents: [(Notification.Name, [TimeInterval])] = [
+            (NSWorkspace.didLaunchApplicationNotification, [1.0, 3.0]),
+            (NSWorkspace.didTerminateApplicationNotification, [0]),
+            (NSWorkspace.didActivateApplicationNotification, [0.2]),
+        ]
+        for (name, delays) in mailEvents {
+            let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                guard app?.bundleIdentifier == MailMenu.bundleIdentifier else { return }
+                MainActor.assumeIsolated {
+                    for delay in delays { self?.scheduleScan(after: delay) }
+                }
+            }
+            workspaceObservers.append((workspace, token))
+        }
+        let wake = workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleScan(after: 1.0) }
+        }
+        workspaceObservers.append((workspace, wake))
+        let distributed = DistributedNotificationCenter.default()
+        let unlock = distributed.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.scheduleScan(after: 1.0) }
+        }
+        workspaceObservers.append((distributed, unlock))
     }
 
     private func ensureObserver(for pid: pid_t) {
@@ -164,7 +246,9 @@ final class SignatureEngine {
         observer = created
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         if let axApp {
-            AXObserverAddNotification(created, axApp, kAXWindowCreatedNotification as CFString, refcon)
+            for name in [kAXWindowCreatedNotification, kAXFocusedWindowChangedNotification, kAXMainWindowChangedNotification] {
+                AXObserverAddNotification(created, axApp, name as CFString, refcon)
+            }
         }
         // .commonModes, not .defaultMode: a run loop in event-tracking mode
         // (a menu open, a window being dragged) does not run the default
@@ -178,147 +262,228 @@ final class SignatureEngine {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         }
         observer = nil
+        observedFrom.removeAll()
+        observedWindows.removeAll()
     }
 
-    /// Subscribes to value changes on a compose window's From popup so alias
-    /// switches are handled the moment they happen. Re-registration of an
-    /// already-observed element is a harmless no-op error.
-    private func observeFromPopup(_ popup: AXUIElement) {
+    /// Value changes on this compose window's From popup, so alias switches
+    /// are handled the moment they happen, and the window's destruction, so
+    /// the fallback stops when it closes. Mail rebuilds the header after a
+    /// From change, so the popup can be a new element: the old one is
+    /// unregistered (an error if it's already gone, which is fine).
+    private func observe(window: AXUIElement, key: AXElementKey, fromPopup popup: AXUIElement) {
         guard let observer else { return }
         let refcon = Unmanaged.passUnretained(self).toOpaque()
+        if !observedWindows.contains(key) {
+            AXObserverAddNotification(observer, window, kAXUIElementDestroyedNotification as CFString, refcon)
+            observedWindows.insert(key)
+        }
+        if let previous = observedFrom[key] {
+            guard !CFEqual(previous, popup) else { return }
+            AXObserverRemoveNotification(observer, previous, kAXValueChangedNotification as CFString)
+        }
         AXObserverAddNotification(observer, popup, kAXValueChangedNotification as CFString, refcon)
+        observedFrom[key] = popup
     }
 
-    // MARK: - Scan (shared by timer and events)
+    private func unobserve(windowKey key: AXElementKey) {
+        if let observer {
+            if let popup = observedFrom[key] {
+                AXObserverRemoveNotification(observer, popup, kAXValueChangedNotification as CFString)
+            }
+            if observedWindows.contains(key) {
+                AXObserverRemoveNotification(observer, key.element, kAXUIElementDestroyedNotification as CFString)
+            }
+        }
+        observedFrom[key] = nil
+        observedWindows.remove(key)
+        visibleCompose.remove(key)
+    }
 
-    private func tick() {
+    private func detachFromMail() {
+        teardownObserver()
+        lastSenderByWindow.removeAll()
+        windowLastSeen.removeAll()
+        retryState.removeAll()
+        notComposeSince.removeAll()
+        visibleCompose.removeAll()
+        axApp = nil
+        axAppPID = -1
+    }
+
+    // MARK: - Scan (shared by every trigger)
+
+    private func refresh(fromFallback: Bool = false) {
         guard isRunning else { return }
+        var didWork = false
+        defer {
+            // Events reset the back-off; only a fallback tick that found
+            // nothing to do lengthens it.
+            quietTicks = (fromFallback && !didWork) ? quietTicks + 1 : 0
+            scheduleFallback()
+        }
 
+        // Read lazily rather than on a timer: the config only matters at
+        // the moment there's a compose window to act on.
         if store.reloadIfChanged() {
-            scheduleTimer() // pick up a changed pollSeconds
             onStatus?("Config reloaded")
         }
 
         guard let mail = NSRunningApplication
-            .runningApplications(withBundleIdentifier: "com.apple.mail").first else {
-            lastSenderByWindow.removeAll()
-            retryState.removeAll()
-            teardownObserver()
-            axApp = nil
-            axAppPID = -1
+            .runningApplications(withBundleIdentifier: MailMenu.bundleIdentifier).first else {
+            detachFromMail()
             return
         }
         guard AXIsProcessTrusted() else {
+            awaitingTrust = true
             report("Accessibility permission needed (System Settings → Privacy & Security → Accessibility)", failure: true)
             return
         }
+        if awaitingTrust {
+            awaitingTrust = false
+            onStatus?("Watching Mail")
+        }
 
         if axApp == nil || axAppPID != mail.processIdentifier {
-            teardownObserver()
+            detachFromMail()
             let created = AXUIElementCreateApplication(mail.processIdentifier)
             AX.limitMessagingTime(for: created)
             axApp = created
             axAppPID = mail.processIdentifier
-            lastSenderByWindow.removeAll()
-            retryState.removeAll()
         }
         ensureObserver(for: mail.processIdentifier)
 
-        guard let axApp,
-              let windows = AX.attribute(axApp, kAXWindowsAttribute) as? [AnyObject] else { return }
+        guard let axApp else { return }
+        let windows = AX.attribute(axApp, kAXWindowsAttribute) as? [AnyObject] ?? []
 
         var seenWindows = Set<AXElementKey>()
+        var compose = Set<AXElementKey>()
+        let now = Date()
 
         for rawWindow in windows {
             guard CFGetTypeID(rawWindow) == AXUIElementGetTypeID() else { continue }
             let window = rawWindow as! AXUIElement
-            guard let compose = discoverControls(in: window) else { continue }
-
             let key = AXElementKey(element: window)
             seenWindows.insert(key)
-            windowLastSeen[key] = Date()
-            observeFromPopup(compose.from)
-
-            guard let senderValue = AX.stringValue(of: compose.from),
-                  let email = Self.emailAddress(in: senderValue)?.lowercased() else { continue }
-
-            guard email != lastSenderByWindow[key] else { continue }
-
-            let signatureName = store.config.signatures[email]
-            let ccAddress = store.config.autoCc?[email]
-
-            guard signatureName != nil || ccAddress != nil else {
-                lastSenderByWindow[key] = email
-                retryState[key] = nil
-                onStatus?("No mapping for \(email)")
-                continue
-            }
-
-            // If the user has the From popup's menu open right now (mid-
-            // switch), opening the Signature menu would fail — macOS allows
-            // one open menu at a time. Try again shortly.
-            if openMenu(of: compose.from) != nil {
-                scheduleScan(after: 0.35)
-                continue
-            }
-
-            // Auto-Cc first — it's idempotent (existing tokens are read
-            // for dedupe), so a signature retry replaying this block is
-            // harmless. That idempotence rests on `tokenAddress` reading a
-            // Contacts-resolved pill correctly; without it the replay is
-            // what corrupts the recipient.
-            if let ccAddress {
-                ensureCc(ccAddress, controls: compose, forEmail: email)
-            }
-
-            guard let signatureName else {
-                // Cc-only alias: nothing further to apply.
-                lastSenderByWindow[key] = email
-                retryState[key] = nil
-                continue
-            }
-
-            switch apply(signatureName: signatureName, to: compose.signature, in: window, forEmail: email) {
-            case .applied:
-                lastSenderByWindow[key] = email
-                retryState[key] = nil
-                scheduleVerification(
-                    windowKey: key, window: window, email: email,
-                    target: signatureName.isEmpty ? "None" : signatureName
-                )
-            case .giveUp:
-                lastSenderByWindow[key] = email
-                retryState[key] = nil
-            case .retry:
-                var state = retryState[key] ?? (email: email, attempts: 0)
-                if state.email != email { state = (email: email, attempts: 0) }
-                state.attempts += 1
-                if state.attempts >= Self.maxApplyAttempts {
-                    lastSenderByWindow[key] = email
-                    retryState[key] = nil
-                    report("Gave up applying signature for \(email)", failure: true)
-                    log("Gave up applying signature for \(email) after \(state.attempts) attempts")
-                } else {
-                    // Leave lastSenderByWindow unchanged so the next scan
-                    // sees the same sender "change" and tries again.
-                    retryState[key] = state
-                    scheduleScan(after: 0.35)
-                }
-            }
+            windowLastSeen[key] = now
+            guard let controls = composeControls(of: window, key: key, now: now) else { continue }
+            compose.insert(key)
+            if process(window: window, key: key, compose: controls) { didWork = true }
         }
+        visibleCompose = compose
 
         // Forget windows we haven't seen for a while. NOT immediately:
         // a compose window in a background tab disappears from the AX
         // windows list entirely, and pruning it right away would make it
         // look brand-new on every tab switch — triggering a pointless
         // re-apply (and menu blink) each time it comes back to the front.
-        let cutoff = Date().addingTimeInterval(-600)
-        lastSenderByWindow = lastSenderByWindow.filter { key, _ in
-            seenWindows.contains(key) || (windowLastSeen[key] ?? .distantPast) > cutoff
+        let cutoff = now.addingTimeInterval(-600)
+        windowLastSeen = windowLastSeen.filter { seenWindows.contains($0.key) || $0.value > cutoff }
+        lastSenderByWindow = lastSenderByWindow.filter { windowLastSeen[$0.key] != nil }
+        notComposeSince = notComposeSince.filter { windowLastSeen[$0.key] != nil }
+        for key in observedWindows.union(observedFrom.keys) where windowLastSeen[key] == nil {
+            unobserve(windowKey: key)
         }
-        windowLastSeen = windowLastSeen.filter { lastSenderByWindow.keys.contains($0.key) }
         // Retries, by contrast, only make sense for windows still on screen.
         retryState = retryState.filter { seenWindows.contains($0.key) }
+    }
+
+    /// Cheapest test first, so anything that isn't a compose window costs
+    /// nothing once it's been judged. The role check is what keeps the
+    /// locked-screen case — `AXWindows` returning the application element —
+    /// down to one attribute read, and then to none.
+    private func composeControls(of window: AXUIElement, key: AXElementKey, now: Date) -> ComposeControls? {
+        if let since = notComposeSince[key], now.timeIntervalSince(since) > Self.settleSeconds {
+            return nil
+        }
+        guard AX.role(of: window) == kAXWindowRole as String else {
+            notComposeSince[key] = .distantPast
+            return nil
+        }
+        guard let controls = discoverControls(in: window) else {
+            // A known compose window failing discovery is Mail rebuilding
+            // its header after a From change, not a verdict about it.
+            if notComposeSince[key] == nil, lastSenderByWindow[key] == nil {
+                notComposeSince[key] = now
+            }
+            return nil
+        }
+        notComposeSince[key] = nil
+        return controls
+    }
+
+    /// Applies whatever this compose window's sender calls for. Returns
+    /// true if it acted (or will retry), which keeps the fallback brisk.
+    private func process(window: AXUIElement, key: AXElementKey, compose: ComposeControls) -> Bool {
+        observe(window: window, key: key, fromPopup: compose.from)
+
+        guard let senderValue = AX.stringValue(of: compose.from),
+              let email = Self.emailAddress(in: senderValue)?.lowercased() else { return false }
+
+        guard email != lastSenderByWindow[key] else { return false }
+
+        let signatureName = store.config.signatures[email]
+        let ccAddress = store.config.autoCc?[email]
+
+        guard signatureName != nil || ccAddress != nil else {
+            lastSenderByWindow[key] = email
+            retryState[key] = nil
+            onStatus?("No mapping for \(email)")
+            return true
+        }
+
+        // If the user has the From popup's menu open right now (mid-
+        // switch), opening the Signature menu would fail — macOS allows
+        // one open menu at a time. Try again shortly.
+        if openMenu(of: compose.from) != nil {
+            scheduleScan(after: 0.35)
+            return true
+        }
+
+        // Auto-Cc first — it's idempotent (existing tokens are read
+        // for dedupe), so a signature retry replaying this block is
+        // harmless. That idempotence rests on `tokenAddress` reading a
+        // Contacts-resolved pill correctly; without it the replay is
+        // what corrupts the recipient.
+        if let ccAddress {
+            ensureCc(ccAddress, controls: compose, forEmail: email)
+        }
+
+        guard let signatureName else {
+            // Cc-only alias: nothing further to apply.
+            lastSenderByWindow[key] = email
+            retryState[key] = nil
+            return true
+        }
+
+        switch apply(signatureName: signatureName, to: compose.signature, in: window, forEmail: email) {
+        case .applied:
+            lastSenderByWindow[key] = email
+            retryState[key] = nil
+            scheduleVerification(
+                windowKey: key, window: window, email: email,
+                target: signatureName.isEmpty ? "None" : signatureName
+            )
+        case .giveUp:
+            lastSenderByWindow[key] = email
+            retryState[key] = nil
+        case .retry:
+            var state = retryState[key] ?? (email: email, attempts: 0)
+            if state.email != email { state = (email: email, attempts: 0) }
+            state.attempts += 1
+            if state.attempts >= Self.maxApplyAttempts {
+                lastSenderByWindow[key] = email
+                retryState[key] = nil
+                report("Gave up applying signature for \(email)", failure: true)
+                log("Gave up applying signature for \(email) after \(state.attempts) attempts")
+            } else {
+                // Leave lastSenderByWindow unchanged so the next scan
+                // sees the same sender "change" and tries again.
+                retryState[key] = state
+                scheduleScan(after: 0.35)
+            }
+        }
+        return true
     }
 
     // MARK: - Compose window discovery
@@ -347,7 +512,7 @@ final class SignatureEngine {
     private func discoverControls(in window: AXUIElement) -> ComposeControls? {
         var popups: [AXUIElement] = []
         var textFields: [AXUIElement] = []
-        collectControls(in: window, depth: 0, popups: &popups, textFields: &textFields)
+        collectControls(in: window, popups: &popups, textFields: &textFields)
         guard !popups.isEmpty else { return nil }
 
         var fromPopup: AXUIElement?
@@ -395,25 +560,23 @@ final class SignatureEngine {
     }
 
     private func collectControls(
-        in element: AXUIElement, depth: Int,
-        popups: inout [AXUIElement], textFields: inout [AXUIElement]
+        in window: AXUIElement, popups: inout [AXUIElement], textFields: inout [AXUIElement]
     ) {
-        guard depth < 15 else { return }
-        for child in AX.children(of: element) {
-            let role = AX.role(of: child)
+        // Bounded by AX.walk (cycles, depth, element count) — a compose
+        // window's header is a few hundred elements at most.
+        AX.walk(below: window) { element, role in
             if role == "AXPopUpButton" {
-                popups.append(child)
-                continue
+                popups.append(element)
+                return .skip
             }
             if role == "AXTextField" {
                 // Leaf on purpose: an address field's children are its
                 // token pills (themselves AXTextFields) — we want the
                 // container here, not the tokens.
-                textFields.append(child)
-                continue
+                textFields.append(element)
+                return .skip
             }
-            if Self.prunedRoles.contains(role) { continue }
-            collectControls(in: child, depth: depth + 1, popups: &popups, textFields: &textFields)
+            return Self.prunedRoles.contains(role) ? .skip : .descend
         }
     }
 
@@ -561,7 +724,8 @@ final class SignatureEngine {
         // verifying "too soon" reported phantom failures and triggered a
         // redundant second menu blink on every single From change. The
         // swallowed-press failure mode is already caught above (menu never
-        // opened), and a delayed, blink-free post-apply check in tick()
+        // opened), and a delayed, blink-free post-apply check
+        // (scheduleVerification)
         // covers the rare genuine miss.
         log("Applied '\(target)' for \(email)")
         onStatus?("Applied '\(target)' for \(email)")
@@ -619,9 +783,13 @@ final class SignatureEngine {
 }
 
 /// C callback for AXObserver — context comes back through refcon.
-private let ottographAXCallback: AXObserverCallback = { _, _, notification, refcon in
+private let ottographAXCallback: AXObserverCallback = { _, element, notification, refcon in
     guard let refcon else { return }
     let engine = Unmanaged<SignatureEngine>.fromOpaque(refcon).takeUnretainedValue()
     let name = notification as String // CFString isn't Sendable; String is
-    MainActor.assumeIsolated { engine.handleNotification(name) }
+    // AXUIElement has no Sendable conformance, but nothing is sent anywhere:
+    // the observer's source is on the main run loop, so this callback is
+    // already on the main thread — the same fact `assumeIsolated` asserts.
+    nonisolated(unsafe) let element = element
+    MainActor.assumeIsolated { engine.handleNotification(name, element: element) }
 }

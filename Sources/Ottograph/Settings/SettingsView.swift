@@ -93,7 +93,7 @@ struct SettingsView: View {
                         .frame(width: 70)
                         .focused($focused, equals: .pollSeconds)
                         .onSubmit(model.save)
-                    Text("seconds (event-driven reactions are instant; this is the safety net)")
+                    Text("seconds, while a compose window is open (reactions are instant; this is the safety net)")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }

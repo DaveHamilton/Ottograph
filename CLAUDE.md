@@ -157,6 +157,22 @@ having crashed rather than Mail stalling. `AX.limitMessagingTime(for:)`
 caps it at two seconds on the application element, which covers every
 element beneath it.
 
+**Mail's AX tree can contain a cycle, so every walk goes through `AX.walk`.**
+On macOS 27.2 beta 3, while the screen is locked, Mail answers
+`AXWindows`, `AXMainWindow` and `AXFocusedWindow` with the *application*
+element, which lists itself twice among its own children. The engine's
+depth-15 walk of each "window" branched app → app, app, menu bar at every
+level: ~475,000 AX calls and 90+ seconds per window, re-run every second
+by the poll, all night. Measured: 54% of Mail's main thread in
+`_XCopyAttributeValue` and ~80% CPU overnight; quitting Ottograph cleared
+it. `AX.walk` never enters `AXApplication`/menu bar roles, keeps a visited
+set, and caps elements; the engine checks a window's role is `AXWindow`
+before anything else, remembers windows that aren't compose windows, and
+runs no timer at all unless a compose window is visible. The general
+lesson: don't let idle cost scale with what another app's tree happens to
+look like. With no compose window open, Ottograph should send Mail
+nothing — measure that with `sample Mail 3`, not by feel.
+
 **A condition that persists must not be logged every tick.** The engine
 re-evaluates once a second, so a missing Accessibility grant wrote ~1800
 identical lines per half hour — and half an hour is exactly the window Copy
