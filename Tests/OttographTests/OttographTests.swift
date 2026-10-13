@@ -63,6 +63,39 @@ func tokenAddressFallsBack() {
     #expect(SignatureEngine.tokenAddress("") == "")
 }
 
+// MARK: - Deciding what auto-Cc writes
+
+@Test("An address already in Cc, in any pill form, is left alone")
+func ccPlanSeesExistingAddress() {
+    #expect(SignatureEngine.ccPlan(existing: ["otto@example.com"], adding: "otto@example.com") == .alreadyPresent)
+    #expect(
+        SignatureEngine.ccPlan(existing: ["Otto Graph <\u{2066}otto@example.com\u{2069}>"], adding: "OTTO@example.com")
+            == .alreadyPresent
+    )
+}
+
+@Test("A missing address is added, with every pill written back bare")
+func ccPlanRewritesWithBareAddresses() {
+    #expect(SignatureEngine.ccPlan(existing: [], adding: "otto@example.com") == .rewrite("otto@example.com"))
+    #expect(
+        SignatureEngine.ccPlan(existing: ["Ann <\u{2066}ann@example.com\u{2069}>"], adding: "otto@example.com")
+            == .rewrite("ann@example.com, otto@example.com")
+    )
+}
+
+@Test("A pill that reads back as only a display name blocks the rewrite")
+func ccPlanRefusesUnreadablePills() {
+    // The reported bug: a reply-all already Cc'd the alias, but its pill
+    // read back as just the Contacts name. That looked like a different
+    // recipient, so the rewrite produced "Mac Geek Gab Feedback, addr" —
+    // the name as plain text ahead of a fresh pill, which Mail won't send.
+    #expect(SignatureEngine.ccPlan(existing: ["Otto Graph"], adding: "otto@example.com") == .unreadable)
+    #expect(
+        SignatureEngine.ccPlan(existing: ["ann@example.com", "Otto Graph"], adding: "otto@example.com")
+            == .unreadable
+    )
+}
+
 // MARK: - Config
 
 @Test("Optional settings absent from an older config fall back, not crash")

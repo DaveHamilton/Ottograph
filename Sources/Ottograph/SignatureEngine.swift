@@ -46,6 +46,11 @@ final class SignatureEngine {
     private var lastSenderByWindow: [AXElementKey: String] = [:]
     private var windowLastSeen: [AXElementKey: Date] = [:]
     private var retryState: [AXElementKey: (email: String, attempts: Int)] = [:]
+    /// Per compose window: how many passes found a Cc pill we couldn't
+    /// read an address from. Kept apart from `retryState` so a Cc that
+    /// never becomes readable can't spend the signature's attempts, and
+    /// so a signature retry replaying the Cc step doesn't restart this.
+    private var ccUnreadableAttempts: [AXElementKey: (email: String, attempts: Int)] = [:]
     /// Windows found not to be compose windows, and when that was first
     /// seen. Re-examined only within `settleSeconds` of it — a compose
     /// window's popups can finish building after it appears — and skipped
@@ -305,6 +310,7 @@ final class SignatureEngine {
         lastSenderByWindow.removeAll()
         windowLastSeen.removeAll()
         retryState.removeAll()
+        ccUnreadableAttempts.removeAll()
         notComposeSince.removeAll()
         visibleCompose.removeAll()
         axApp = nil
@@ -386,6 +392,7 @@ final class SignatureEngine {
         }
         // Retries, by contrast, only make sense for windows still on screen.
         retryState = retryState.filter { seenWindows.contains($0.key) }
+        ccUnreadableAttempts = ccUnreadableAttempts.filter { seenWindows.contains($0.key) }
     }
 
     /// Cheapest test first, so anything that isn't a compose window costs
@@ -445,8 +452,25 @@ final class SignatureEngine {
         // harmless. That idempotence rests on `tokenAddress` reading a
         // Contacts-resolved pill correctly; without it the replay is
         // what corrupts the recipient.
-        if let ccAddress {
-            ensureCc(ccAddress, controls: compose, forEmail: email)
+        if let ccAddress, !ensureCc(ccAddress, controls: compose, forEmail: email) {
+            // A pill we can't read yet. Rewriting the field now would turn
+            // it into plain text, so wait for Mail to finish with it —
+            // and hold the signature too, so this pass is replayed whole.
+            var state = ccUnreadableAttempts[key] ?? (email: email, attempts: 0)
+            if state.email != email { state = (email: email, attempts: 0) }
+            state.attempts += 1
+            ccUnreadableAttempts[key] = state
+            if state.attempts < Self.maxApplyAttempts {
+                scheduleScan(after: 0.35)
+                return true
+            }
+            if state.attempts == Self.maxApplyAttempts {
+                report("Left Cc alone for \(email): couldn't read a recipient already in it", failure: true)
+                log("Left Cc alone for \(email) after \(state.attempts) passes: a pill had no readable address")
+            }
+            // Spent: carry on with the signature, and leave the Cc as is.
+        } else {
+            ccUnreadableAttempts[key] = nil
         }
 
         guard let signatureName else {
@@ -605,19 +629,24 @@ final class SignatureEngine {
     /// Mail has resolved against Contacts reads back as "Name <addr>", not
     /// as the bare address, and comparing those strings whole makes an
     /// address that is already present look missing.
-    private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String) {
+    ///
+    /// Returns false only when a pill's address couldn't be read, so the
+    /// field was left alone and the caller should try again shortly.
+    private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String) -> Bool {
         guard let ccField = controls.cc else {
             report("No Cc field found for \(email)", failure: true)
-            return
+            return true
         }
 
-        let existingAddresses = AX.children(of: ccField)
-            .compactMap { AX.stringValue(of: $0) }
-            .map(Self.tokenAddress)
-            .filter { !$0.isEmpty }
-        let want = Self.tokenAddress(address)
-        guard !existingAddresses.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) else {
-            return
+        let tokens = AX.children(of: ccField).compactMap { AX.stringValue(of: $0) }
+        let combined: String
+        switch Self.ccPlan(existing: tokens, adding: address) {
+        case .alreadyPresent:
+            return true
+        case .unreadable:
+            return false
+        case .rewrite(let value):
+            combined = value
         }
 
         // Never fight the user for a field they're editing right now.
@@ -626,22 +655,14 @@ final class SignatureEngine {
            let rawFocus = AX.attribute(axApp, kAXFocusedUIElementAttribute),
            CFGetTypeID(rawFocus) == AXUIElementGetTypeID() {
             let focused = rawFocus as! AXUIElement
-            if CFEqual(focused, ccField) { return }
+            if CFEqual(focused, ccField) { return true }
             previousFocus = focused
         }
 
-        // Bare addresses only. Setting this attribute replaces the whole
-        // field, and Mail's parser mishandles a comma-separated list that
-        // contains angle brackets: "A <a@x>, b@x" comes back as a *single*
-        // recipient whose display name is "A , b@x". Verified against Mail
-        // 16.0 — quoting the display name doesn't help, and neither does a
-        // semicolon or a newline separator. A list of plain addresses is
-        // the one form that tokenizes back into one pill per recipient.
-        let combined = (existingAddresses + [want]).joined(separator: ", ")
         guard AXUIElementSetAttributeValue(ccField, kAXValueAttribute as CFString, combined as CFTypeRef) == .success else {
             report("Couldn't set Cc for \(email)", failure: true)
             log("Couldn't set Cc \(address) for \(email)")
-            return
+            return true
         }
 
         // Commit the tokens to the message model: focus in, focus away.
@@ -653,6 +674,43 @@ final class SignatureEngine {
 
         log("Added Cc \(address) for \(email)")
         onStatus?("Added Cc \(address) for \(email)")
+        return true
+    }
+
+    enum CcPlan: Equatable {
+        case alreadyPresent
+        /// The whole field's new value.
+        case rewrite(String)
+        /// A pill yielded no address, so a rewrite would lose it.
+        case unreadable
+    }
+
+    /// What auto-Cc should do, given the Cc pills' raw values.
+    ///
+    /// Every write replaces the whole field, so each existing pill has to
+    /// be written back as its address — and a pill that reads back as a
+    /// bare display name ("Otto Graph", no address at all) can't be. Mail
+    /// does hand that back for a pill it's mid-way through resolving
+    /// against Contacts; written back, it becomes plain text in the field
+    /// ahead of the real recipient, which Mail then refuses to send. That
+    /// was intermittent because it depends on catching Mail at that
+    /// instant. So a pill without an address stops the rewrite outright;
+    /// it never decides on its own that the address is missing.
+    nonisolated static func ccPlan(existing rawTokens: [String], adding address: String) -> CcPlan {
+        let existing = rawTokens.map(tokenAddress).filter { !$0.isEmpty }
+        let want = tokenAddress(address)
+        if existing.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) {
+            return .alreadyPresent
+        }
+        guard existing.allSatisfy({ $0.contains("@") }) else { return .unreadable }
+        // Bare addresses only. Setting this attribute replaces the whole
+        // field, and Mail's parser mishandles a comma-separated list that
+        // contains angle brackets: "A <a@x>, b@x" comes back as a *single*
+        // recipient whose display name is "A , b@x". Verified against Mail
+        // 16.0 — quoting the display name doesn't help, and neither does a
+        // semicolon or a newline separator. A list of plain addresses is
+        // the one form that tokenizes back into one pill per recipient.
+        return .rewrite((existing + [want]).joined(separator: ", "))
     }
 
     /// Blink-free safety net: well after an apply, re-read the Signature

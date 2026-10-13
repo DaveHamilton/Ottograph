@@ -222,6 +222,19 @@ that tokenizes back into one pill per recipient**, so that is what a rewrite
 must write. `AXSelectedText`/`AXSelectedTextRange` are not settable on the
 field, so there is no append; every write replaces the whole thing.
 
+Which means a pill that reads back as a **bare display name**, with no
+address at all, must stop the rewrite. Reported on 0.11.8: replying all
+to a message that already Cc'd the alias intermittently left the field
+as plain text `Mac Geek Gab Feedback` followed by a fresh address pill —
+the name written back as a "recipient", which Mail refuses to send. The
+same keystroke on the same message also produced a resolved pill and a
+bare-address pill, so the read is racing Mail's Contacts resolution.
+That a mid-resolution pill's `AXValue` is the name alone is *inferred*
+from the screenshot matching `ensureCc`'s output exactly, not yet seen
+with `ax-probe`. `SignatureEngine.ccPlan` refuses to rewrite past an
+unreadable pill and the engine retries a few passes before leaving the
+Cc alone.
+
 **Use `Message > Send Later > Send Later…`, not the toolbar button.** The menu
 is always present regardless of toolbar customization, pressing a menu item via
 AX opens no visible menu, and the item's enabled state doubles as validation
