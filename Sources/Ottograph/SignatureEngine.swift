@@ -51,6 +51,10 @@ final class SignatureEngine {
     /// never becomes readable can't spend the signature's attempts, and
     /// so a signature retry replaying the Cc step doesn't restart this.
     private var ccUnreadableAttempts: [AXElementKey: (email: String, attempts: Int)] = [:]
+    /// Per compose window: the sender whose auto-Cc has already been
+    /// handled. A signature retry or a post-apply reapply replays
+    /// `process`, and the Cc step must not ride along — see `process`.
+    private var ccHandledForSender: [AXElementKey: String] = [:]
     /// Windows found not to be compose windows, and when that was first
     /// seen. Re-examined only within `settleSeconds` of it — a compose
     /// window's popups can finish building after it appears — and skipped
@@ -311,6 +315,7 @@ final class SignatureEngine {
         windowLastSeen.removeAll()
         retryState.removeAll()
         ccUnreadableAttempts.removeAll()
+        ccHandledForSender.removeAll()
         notComposeSince.removeAll()
         visibleCompose.removeAll()
         axApp = nil
@@ -386,6 +391,7 @@ final class SignatureEngine {
         let cutoff = now.addingTimeInterval(-600)
         windowLastSeen = windowLastSeen.filter { seenWindows.contains($0.key) || $0.value > cutoff }
         lastSenderByWindow = lastSenderByWindow.filter { windowLastSeen[$0.key] != nil }
+        ccHandledForSender = ccHandledForSender.filter { windowLastSeen[$0.key] != nil }
         notComposeSince = notComposeSince.filter { windowLastSeen[$0.key] != nil }
         for key in observedWindows.union(observedFrom.keys) where windowLastSeen[key] == nil {
             unobserve(windowKey: key)
@@ -428,6 +434,11 @@ final class SignatureEngine {
               let email = Self.emailAddress(in: senderValue)?.lowercased() else { return false }
 
         guard email != lastSenderByWindow[key] else { return false }
+        // Any other sender, mapped or not, means a later return to this
+        // one is a fresh choice whose Cc deserves a fresh check.
+        if let handled = ccHandledForSender[key], handled != email {
+            ccHandledForSender[key] = nil
+        }
 
         let signatureName = store.config.signatures[email]
         let ccAddress = store.config.autoCc?[email]
@@ -447,12 +458,18 @@ final class SignatureEngine {
             return true
         }
 
-        // Auto-Cc first — it's idempotent (existing tokens are read
-        // for dedupe), so a signature retry replaying this block is
-        // harmless. That idempotence rests on `tokenAddress` reading a
-        // Contacts-resolved pill correctly; without it the replay is
-        // what corrupts the recipient.
-        if let ccAddress, !ensureCc(ccAddress, controls: compose, forEmail: email) {
+        // Auto-Cc first, and once per sender per window. A signature
+        // retry or a post-apply reapply replays this whole function, and
+        // the Cc step used to replay with it on the theory that it was
+        // idempotent. It isn't, quite: ~1.3s after the first write Mail
+        // has matched the pill against Contacts, it no longer reads back
+        // as the address, and the replay rewrote the field with the
+        // contact's name as plain text. The log showed it plainly — every
+        // corrupted window had "Post-apply check … found 'None' —
+        // reapplying" followed by a second "Added Cc". Switching From
+        // away and back is a new sender, so the Cc is still re-checked.
+        if let ccAddress, ccHandledForSender[key] != email,
+           !ensureCc(ccAddress, controls: compose, forEmail: email) {
             // A pill we can't read yet. Rewriting the field now would turn
             // it into plain text, so wait for Mail to finish with it —
             // and hold the signature too, so this pass is replayed whole.
@@ -464,13 +481,15 @@ final class SignatureEngine {
                 scheduleScan(after: 0.35)
                 return true
             }
-            if state.attempts == Self.maxApplyAttempts {
-                report("Left Cc alone for \(email): couldn't read a recipient already in it", failure: true)
-                log("Left Cc alone for \(email) after \(state.attempts) passes: a pill had no readable address")
-            }
-            // Spent: carry on with the signature, and leave the Cc as is.
-        } else {
+            // Spent: leave the Cc as is and carry on with the signature.
+            // Not a notification — the likeliest unreadable pill is the
+            // very address we'd add, already there and resolved.
+            log("Left Cc alone for \(email) after \(state.attempts) passes: a pill had no readable address")
+            onStatus?("Left Cc alone for \(email)")
+            ccHandledForSender[key] = email
+        } else if ccAddress != nil {
             ccUnreadableAttempts[key] = nil
+            ccHandledForSender[key] = email
         }
 
         guard let signatureName else {

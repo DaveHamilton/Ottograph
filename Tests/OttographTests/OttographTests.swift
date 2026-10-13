@@ -85,10 +85,12 @@ func ccPlanRewritesWithBareAddresses() {
 
 @Test("A pill that reads back as only a display name blocks the rewrite")
 func ccPlanRefusesUnreadablePills() {
-    // The reported bug: a reply-all already Cc'd the alias, but its pill
-    // read back as just the Contacts name. That looked like a different
-    // recipient, so the rewrite produced "Mac Geek Gab Feedback, addr" —
-    // the name as plain text ahead of a fresh pill, which Mail won't send.
+    // The reported bug's last step: a replayed Cc pass found the pill
+    // Ottograph had just added no longer reading as the address. Treated
+    // as some other recipient, it was written back as "Otto Graph,
+    // otto@example.com" — the name as plain text ahead of a fresh pill,
+    // which Mail won't send. The replay itself is now skipped; this is
+    // the second line of defence if anything else ever reaches it.
     #expect(SignatureEngine.ccPlan(existing: ["Otto Graph"], adding: "otto@example.com") == .unreadable)
     #expect(
         SignatureEngine.ccPlan(existing: ["ann@example.com", "Otto Graph"], adding: "otto@example.com")
