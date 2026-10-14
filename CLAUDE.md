@@ -241,6 +241,21 @@ rewrite past any pill with no `@` in it. What exact value the resolved
 pill reads back was never caught live — `cc-watch`-style polling saw
 bare addresses only — so don't build anything that depends on it.
 
+**And the gate alone wasn't enough: count pills from the field, not from
+what read.** It happened again on 0.11.9 — `Added Cc`, `Applied`, the
+post-apply reapply, and a second `Added Cc` in the same window, so the
+once-per-sender gate didn't hold (why is still unknown; the `Sender
+changed … Cc will be re-checked` line was added to find out). `ax-probe`
+then read the Cc field's `AXValue` as `Otto Graph\u{FFFC}`: the name as
+text, then a pill. A token field's own value carries one U+FFFC per
+pill. Since 0.11.9's `ccPlan` already refused a pill reading as a bare
+name, the resolved pill must have read as *nothing* — and `compactMap`
+silently dropped it, so the field looked empty and got rewritten.
+`ccPlan` now takes the field's value too, and refuses to rewrite unless
+every U+FFFC is matched by a pill that read as an address and any loose
+text is one of those addresses. The log line for `Added Cc` records the
+pill and child counts it saw.
+
 **Use `Message > Send Later > Send Later…`, not the toolbar button.** The menu
 is always present regardless of toolbar customization, pressing a menu item via
 AX opens no visible menu, and the item's enabled state doubles as validation
