@@ -437,6 +437,7 @@ final class SignatureEngine {
         // Any other sender, mapped or not, means a later return to this
         // one is a fresh choice whose Cc deserves a fresh check.
         if let handled = ccHandledForSender[key], handled != email {
+            log("Sender changed from \(handled) to \(email); Cc will be re-checked")
             ccHandledForSender[key] = nil
         }
 
@@ -657,9 +658,12 @@ final class SignatureEngine {
             return true
         }
 
-        let tokens = AX.children(of: ccField).compactMap { AX.stringValue(of: $0) }
+        // Not compactMap: a pill whose value can't be read must still be
+        // counted, or the field looks emptier than it is.
+        let tokens = AX.children(of: ccField).map { AX.stringValue(of: $0) }
+        let fieldValue = AX.stringValue(of: ccField)
         let combined: String
-        switch Self.ccPlan(existing: tokens, adding: address) {
+        switch Self.ccPlan(fieldValue: fieldValue, tokens: tokens, adding: address) {
         case .alreadyPresent:
             return true
         case .unreadable:
@@ -691,7 +695,10 @@ final class SignatureEngine {
             _ = AXUIElementSetAttributeValue(restoreTarget, kAXFocusedAttribute as CFString, kCFBooleanTrue)
         }
 
-        log("Added Cc \(address) for \(email)")
+        // The field's shape before the write, so a bad rewrite can be
+        // told apart from a good one in a diagnostics report.
+        let pillCount = (fieldValue ?? "").filter { $0 == Self.pillMark }.count
+        log("Added Cc \(address) for \(email) (field had \(pillCount) pill(s), \(tokens.count) child(ren))")
         onStatus?("Added Cc \(address) for \(email)")
         return true
     }
@@ -704,24 +711,43 @@ final class SignatureEngine {
         case unreadable
     }
 
-    /// What auto-Cc should do, given the Cc pills' raw values.
+    /// The character a token field puts in its own value for each pill.
+    nonisolated static let pillMark: Character = "\u{FFFC}"
+
+    /// What auto-Cc should do, given the Cc field's own value (one U+FFFC
+    /// per pill, plus any loose text) and each pill's raw value.
     ///
-    /// Every write replaces the whole field, so each existing pill has to
-    /// be written back as its address — and a pill that reads back as a
-    /// bare display name ("Otto Graph", no address at all) can't be. Mail
-    /// does hand that back for a pill it's mid-way through resolving
-    /// against Contacts; written back, it becomes plain text in the field
-    /// ahead of the real recipient, which Mail then refuses to send. That
-    /// was intermittent because it depends on catching Mail at that
-    /// instant. So a pill without an address stops the rewrite outright;
-    /// it never decides on its own that the address is missing.
-    nonisolated static func ccPlan(existing rawTokens: [String], adding address: String) -> CcPlan {
-        let existing = rawTokens.map(tokenAddress).filter { !$0.isEmpty }
+    /// Every write replaces the whole field, so it is only safe when every
+    /// pill already in it can be written back as an address. Anything that
+    /// can't be accounted for — a pill whose value is a bare display name,
+    /// a pill with no readable value at all, or loose text — makes the plan
+    /// `.unreadable`, and the field is left alone. That is not a corner
+    /// case: on 0.11.9 a second Cc pass still rewrote a field that already
+    /// held the address, and `ax-probe` then read it back as
+    /// "Otto Graph\u{FFFC}" — the contact name as text, then a new pill.
+    /// 0.11.9 already refused a pill reading as a bare name, so by
+    /// elimination the resolved pill read as nothing at all and was
+    /// dropped from the list, making the field look empty. (Inferred from
+    /// the log; the pill's raw value has still never been captured.) So
+    /// the pill count comes from the field itself, not from what read.
+    nonisolated static func ccPlan(fieldValue: String?, tokens rawTokens: [String?], adding address: String) -> CcPlan {
+        let readable = rawTokens.compactMap { $0 }.map(tokenAddress).filter { !$0.isEmpty }
         let want = tokenAddress(address)
-        if existing.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) {
+        if readable.contains(where: { $0.caseInsensitiveCompare(want) == .orderedSame }) {
             return .alreadyPresent
         }
-        guard existing.allSatisfy({ $0.contains("@") }) else { return .unreadable }
+        let field = cleanAddress(fieldValue ?? "")
+        let pills = field.filter { $0 == pillMark }.count
+        // Text outside the pills is tolerated only if it's addresses we
+        // already read from them — whether an unresolved pill shows its
+        // address in the field's value has never been checked.
+        let known = Set(readable.map { $0.lowercased() })
+        let looseWords = String(field.filter { $0 != pillMark })
+            .split(whereSeparator: { $0.isWhitespace || $0 == "," || $0 == ";" })
+            .map { tokenAddress(String($0)).lowercased() }
+        guard looseWords.allSatisfy({ known.contains($0) }),
+              readable.count >= pills,
+              readable.allSatisfy({ $0.contains("@") }) else { return .unreadable }
         // Bare addresses only. Setting this attribute replaces the whole
         // field, and Mail's parser mishandles a comma-separated list that
         // contains angle brackets: "A <a@x>, b@x" comes back as a *single*
@@ -729,7 +755,7 @@ final class SignatureEngine {
         // 16.0 — quoting the display name doesn't help, and neither does a
         // semicolon or a newline separator. A list of plain addresses is
         // the one form that tokenizes back into one pill per recipient.
-        return .rewrite((existing + [want]).joined(separator: ", "))
+        return .rewrite((readable + [want]).joined(separator: ", "))
     }
 
     /// Blink-free safety net: well after an apply, re-read the Signature

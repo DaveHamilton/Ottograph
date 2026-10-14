@@ -67,34 +67,72 @@ func tokenAddressFallsBack() {
 
 @Test("An address already in Cc, in any pill form, is left alone")
 func ccPlanSeesExistingAddress() {
-    #expect(SignatureEngine.ccPlan(existing: ["otto@example.com"], adding: "otto@example.com") == .alreadyPresent)
     #expect(
-        SignatureEngine.ccPlan(existing: ["Otto Graph <\u{2066}otto@example.com\u{2069}>"], adding: "OTTO@example.com")
+        SignatureEngine.ccPlan(fieldValue: "\u{FFFC}", tokens: ["otto@example.com"], adding: "otto@example.com")
             == .alreadyPresent
+    )
+    #expect(
+        SignatureEngine.ccPlan(
+            fieldValue: "\u{FFFC}",
+            tokens: ["Otto Graph <\u{2066}otto@example.com\u{2069}>"],
+            adding: "OTTO@example.com"
+        ) == .alreadyPresent
     )
 }
 
 @Test("A missing address is added, with every pill written back bare")
 func ccPlanRewritesWithBareAddresses() {
-    #expect(SignatureEngine.ccPlan(existing: [], adding: "otto@example.com") == .rewrite("otto@example.com"))
+    #expect(SignatureEngine.ccPlan(fieldValue: "", tokens: [], adding: "otto@example.com") == .rewrite("otto@example.com"))
+    #expect(SignatureEngine.ccPlan(fieldValue: nil, tokens: [], adding: "otto@example.com") == .rewrite("otto@example.com"))
     #expect(
-        SignatureEngine.ccPlan(existing: ["Ann <\u{2066}ann@example.com\u{2069}>"], adding: "otto@example.com")
-            == .rewrite("ann@example.com, otto@example.com")
+        SignatureEngine.ccPlan(
+            fieldValue: "\u{FFFC}",
+            tokens: ["Ann <\u{2066}ann@example.com\u{2069}>"],
+            adding: "otto@example.com"
+        ) == .rewrite("ann@example.com, otto@example.com")
     )
 }
 
 @Test("A pill that reads back as only a display name blocks the rewrite")
-func ccPlanRefusesUnreadablePills() {
-    // The reported bug's last step: a replayed Cc pass found the pill
-    // Ottograph had just added no longer reading as the address. Treated
-    // as some other recipient, it was written back as "Otto Graph,
-    // otto@example.com" — the name as plain text ahead of a fresh pill,
-    // which Mail won't send. The replay itself is now skipped; this is
-    // the second line of defence if anything else ever reaches it.
-    #expect(SignatureEngine.ccPlan(existing: ["Otto Graph"], adding: "otto@example.com") == .unreadable)
+func ccPlanRefusesNamedPills() {
+    #expect(SignatureEngine.ccPlan(fieldValue: "\u{FFFC}", tokens: ["Otto Graph"], adding: "otto@example.com") == .unreadable)
     #expect(
-        SignatureEngine.ccPlan(existing: ["ann@example.com", "Otto Graph"], adding: "otto@example.com")
-            == .unreadable
+        SignatureEngine.ccPlan(
+            fieldValue: "\u{FFFC}\u{FFFC}",
+            tokens: ["ann@example.com", "Otto Graph"],
+            adding: "otto@example.com"
+        ) == .unreadable
+    )
+}
+
+@Test("A pill with no readable value still counts, so the field isn't taken for empty")
+func ccPlanCountsPillsFromTheField() {
+    // The 0.11.9 report: a second pass read a Contacts-resolved pill as
+    // nothing at all. Dropped rather than counted, the field looked empty,
+    // and the rewrite left "Otto Graph" as plain text ahead of a new pill.
+    #expect(SignatureEngine.ccPlan(fieldValue: "\u{FFFC}", tokens: [nil], adding: "otto@example.com") == .unreadable)
+    #expect(SignatureEngine.ccPlan(fieldValue: "\u{FFFC}", tokens: [""], adding: "otto@example.com") == .unreadable)
+    #expect(SignatureEngine.ccPlan(fieldValue: "\u{FFFC}", tokens: [], adding: "otto@example.com") == .unreadable)
+}
+
+@Test("Loose text that isn't a known address blocks the rewrite")
+func ccPlanRefusesLooseText() {
+    // What ax-probe read from the broken field: the name as text, then the pill.
+    #expect(
+        SignatureEngine.ccPlan(
+            fieldValue: "Otto Graph\u{FFFC}",
+            tokens: ["otto@example.com"],
+            adding: "ann@example.com"
+        ) == .unreadable
+    )
+    // An unresolved pill that shows its own address in the field's value
+    // is accounted for, so it doesn't block the add.
+    #expect(
+        SignatureEngine.ccPlan(
+            fieldValue: "ann@example.com",
+            tokens: ["ann@example.com"],
+            adding: "otto@example.com"
+        ) == .rewrite("ann@example.com, otto@example.com")
     )
 }
 
