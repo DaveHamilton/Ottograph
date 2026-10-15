@@ -437,7 +437,7 @@ final class SignatureEngine {
         // Any other sender, mapped or not, means a later return to this
         // one is a fresh choice whose Cc deserves a fresh check.
         if let handled = ccHandledForSender[key], handled != email {
-            log("Sender changed from \(handled) to \(email); Cc will be re-checked")
+            log("Sender changed from \(handled) to \(email) in window \(Self.tag(key)); Cc will be re-checked")
             ccHandledForSender[key] = nil
         }
 
@@ -470,9 +470,9 @@ final class SignatureEngine {
         // reapplying" followed by a second "Added Cc". Switching From
         // away and back is a new sender, so the Cc is still re-checked.
         if let ccAddress, ccHandledForSender[key] != email,
-           !ensureCc(ccAddress, controls: compose, forEmail: email) {
-            // A pill we can't read yet. Rewriting the field now would turn
-            // it into plain text, so wait for Mail to finish with it —
+           !ensureCc(ccAddress, controls: compose, forEmail: email, window: key) {
+            // Something in the field we can't write back yet. Rewriting it
+            // now could turn it into plain text, so wait for it to settle —
             // and hold the signature too, so this pass is replayed whole.
             var state = ccUnreadableAttempts[key] ?? (email: email, attempts: 0)
             if state.email != email { state = (email: email, attempts: 0) }
@@ -485,7 +485,7 @@ final class SignatureEngine {
             // Spent: leave the Cc as is and carry on with the signature.
             // Not a notification — the likeliest unreadable pill is the
             // very address we'd add, already there and resolved.
-            log("Left Cc alone for \(email) after \(state.attempts) passes: a pill had no readable address")
+            log("Left Cc alone for \(email) after \(state.attempts) passes: the field held something it couldn't write back")
             onStatus?("Left Cc alone for \(email)")
             ccHandledForSender[key] = email
         } else if ccAddress != nil {
@@ -650,9 +650,11 @@ final class SignatureEngine {
     /// as the bare address, and comparing those strings whole makes an
     /// address that is already present look missing.
     ///
-    /// Returns false only when a pill's address couldn't be read, so the
-    /// field was left alone and the caller should try again shortly.
-    private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String) -> Bool {
+    /// Returns false only when the field held something that couldn't be
+    /// written back — a pill without a readable address, or text that
+    /// isn't a pill yet — so it was left alone and the caller should try
+    /// again shortly.
+    private func ensureCc(_ address: String, controls: ComposeControls, forEmail email: String, window key: AXElementKey) -> Bool {
         guard let ccField = controls.cc else {
             report("No Cc field found for \(email)", failure: true)
             return true
@@ -698,7 +700,8 @@ final class SignatureEngine {
         // The field's shape before the write, so a bad rewrite can be
         // told apart from a good one in a diagnostics report.
         let pillCount = (fieldValue ?? "").filter { $0 == Self.pillMark }.count
-        log("Added Cc \(address) for \(email) (field had \(pillCount) pill(s), \(tokens.count) child(ren))")
+        let shapes = tokens.map(Self.tokenShape).joined(separator: ",")
+        log("Added Cc \(address) for \(email) in window \(Self.tag(key)) (field had \(pillCount) pill(s); children [\(shapes)])")
         onStatus?("Added Cc \(address) for \(email)")
         return true
     }
@@ -707,29 +710,52 @@ final class SignatureEngine {
         case alreadyPresent
         /// The whole field's new value.
         case rewrite(String)
-        /// A pill yielded no address, so a rewrite would lose it.
+        /// The field holds something a rewrite would lose or mangle.
         case unreadable
+    }
+
+    /// A short, stable name for a window in the log, so two passes can be
+    /// told apart as the same window or two different ones.
+    nonisolated static func tag(_ key: AXElementKey) -> String {
+        String(UInt(CFHash(key.element)) & 0xFFFFFF, radix: 16)
+    }
+
+    /// What a Cc pill's raw value looked like, without the address itself:
+    /// `addr`, `name<addr>`, `name` (no address), `empty`, or `nil`.
+    nonisolated static func tokenShape(_ raw: String?) -> String {
+        guard let raw else { return "nil" }
+        let cleaned = cleanAddress(raw)
+        if cleaned.isEmpty { return "empty" }
+        if cleaned.contains("<") { return "name<addr>" }
+        return cleaned.contains("@") ? "addr" : "name"
     }
 
     /// The character a token field puts in its own value for each pill.
     nonisolated static let pillMark: Character = "\u{FFFC}"
 
-    /// What auto-Cc should do, given the Cc field's own value (one U+FFFC
-    /// per pill, plus any loose text) and each pill's raw value.
+    /// What auto-Cc should do, given the Cc field's own value and each
+    /// pill's raw value.
     ///
     /// Every write replaces the whole field, so it is only safe when every
     /// pill already in it can be written back as an address. Anything that
     /// can't be accounted for — a pill whose value is a bare display name,
-    /// a pill with no readable value at all, or loose text — makes the plan
-    /// `.unreadable`, and the field is left alone. That is not a corner
-    /// case: on 0.11.9 a second Cc pass still rewrote a field that already
-    /// held the address, and `ax-probe` then read it back as
-    /// "Otto Graph\u{FFFC}" — the contact name as text, then a new pill.
-    /// 0.11.9 already refused a pill reading as a bare name, so by
-    /// elimination the resolved pill read as nothing at all and was
-    /// dropped from the list, making the field look empty. (Inferred from
-    /// the log; the pill's raw value has still never been captured.) So
-    /// the pill count comes from the field itself, not from what read.
+    /// a pill with no readable value, or any text outside the pills —
+    /// makes the plan `.unreadable`, and the field is left alone.
+    ///
+    /// Measured on Mail 16.0 / macOS 27.2 with a 100ms poll through Reply
+    /// All, Contacts resolution and a post-apply reapply: the field's value
+    /// is exactly one U+FFFC per pill and nothing else, whether the pill is
+    /// resolved or not. An unresolved pill reads as the bare address; a
+    /// resolved one as `Name <\u{2068}addr\u{2069}>`. Neither ever read
+    /// back as nil or as a bare name. So text in the field's value is
+    /// something typed and not yet tokenized — never a pill — and is
+    /// reason enough to keep out. And the broken field from the 0.11.9
+    /// report, "Otto Graph\u{FFFC}", is exactly what writing
+    /// "Otto Graph, otto@example.com" and committing produces: the name
+    /// stays as text, the address becomes a pill. Something wrote the name
+    /// as a list item; the pill count from the field and the loose-text
+    /// check are there so that whatever read made that look safe can't
+    /// make a rewrite look safe again.
     nonisolated static func ccPlan(fieldValue: String?, tokens rawTokens: [String?], adding address: String) -> CcPlan {
         let readable = rawTokens.compactMap { $0 }.map(tokenAddress).filter { !$0.isEmpty }
         let want = tokenAddress(address)
@@ -738,14 +764,8 @@ final class SignatureEngine {
         }
         let field = cleanAddress(fieldValue ?? "")
         let pills = field.filter { $0 == pillMark }.count
-        // Text outside the pills is tolerated only if it's addresses we
-        // already read from them — whether an unresolved pill shows its
-        // address in the field's value has never been checked.
-        let known = Set(readable.map { $0.lowercased() })
-        let looseWords = String(field.filter { $0 != pillMark })
-            .split(whereSeparator: { $0.isWhitespace || $0 == "," || $0 == ";" })
-            .map { tokenAddress(String($0)).lowercased() }
-        guard looseWords.allSatisfy({ known.contains($0) }),
+        let loose = field.contains { $0 != pillMark && !$0.isWhitespace && $0 != "," }
+        guard !loose,
               readable.count >= pills,
               readable.allSatisfy({ $0.contains("@") }) else { return .unreadable }
         // Bare addresses only. Setting this attribute replaces the whole
@@ -769,7 +789,7 @@ final class SignatureEngine {
                 guard let compose = self.discoverControls(in: window),
                       let current = AX.stringValue(of: compose.signature) else { return } // window gone/rebuilding
                 if current != target {
-                    self.log("Post-apply check for \(email): expected '\(target)', found '\(current)' — reapplying")
+                    self.log("Post-apply check for \(email) in window \(Self.tag(windowKey)): expected '\(target)', found '\(current)' — reapplying")
                     self.lastSenderByWindow[windowKey] = nil
                     self.scheduleScan(after: 0.05)
                 }
