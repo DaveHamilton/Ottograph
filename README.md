@@ -272,6 +272,16 @@ as the same app and the Accessibility grant carries across them.
       Every tree walk is now bounded (no cycles, capped size), and the
       engine is fully event-driven: with no compose window open it sends
       Mail nothing at all, and the fallback check runs only while one is
+      open
+- [x] v0.11.9 — auto-Cc handles its recipient once per sender per window:
+      putting back a signature Mail reset no longer re-runs the Cc step,
+      which could rewrite the field after Mail had matched the address to
+      Contacts and leave the contact's name in Cc as plain text
+- [x] v0.11.10 — auto-Cc never rewrites a Cc field it can't fully account
+      for: a pill without a readable address, or any text that isn't a
+      pill, leaves the field alone. Grounded in what Mail's Cc field was
+      measured to hold rather than inferred, and the log now records which
+      window and what shape of field each Cc write saw
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27
 
 ## Limitations
