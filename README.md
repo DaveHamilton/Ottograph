@@ -204,85 +204,31 @@ Every build (local ones too) is signed with the same Developer ID identity
 under the hardened runtime, so macOS treats development and release builds
 as the same app and the Accessibility grant carries across them.
 
-## Project status / roadmap
+## Status
 
-- [x] v0.1 — menu bar app, JSON config, AppleScript engine
-      (worked, but only for script-created compose windows)
-- [x] v0.2 — Accessibility engine: real ⌘N/reply/forward windows,
-      every compose window tracked independently
-- [x] v0.3 — event-driven engine (AXObserver): instant reaction to From
-      changes and new windows, polling demoted to a fallback safety net
-- [x] v0.4 — app bundle (`Scripts/build-app.sh`), signed, menu-bar-only
-      (`LSUIElement`), Start at Login via SMAppService
-- [x] v0.5 — per-alias auto-Cc: choosing a mapped From alias also adds a
-      configured address to the Cc field (deduped, focus-preserving)
-- [x] v0.6 — "Send in 2 Minutes" (⌃⌥⌘S): schedules the focused compose
-      window via Mail's native Send Later, for a regret window beyond
-      Undo Send's 30-second cap
-- [x] v0.7 — Settings window (menu bar → Settings…): edit alias mappings,
-      auto-Cc, and timing in a UI
-- [x] v0.8 — app icon and mascot art, with `Scripts/make-icon.sh` masking the
-      artwork into the macOS squircle; the menu bar gets a matching monochrome
-      template glyph
-- [x] v0.9 — optional takeover of Mail's ⇧⌘D, so muscle memory gets the
-      delayed-send window too (claimed only while Mail is frontmost)
-- [x] v0.9.1 — Settings polish: addresses and signature names load from Mail
-      automatically when the window opens, both columns are pickable,
-      already-mapped addresses are filtered out, and the standard Edit-menu
-      shortcuts (cut/copy/paste/undo) work in the fields
-- [x] v0.10 — UX pass: Start at Login moved into Settings, notifications for
-      failures (and optionally for scheduled sends), and a struck-through
-      menu bar glyph while paused
-- [x] v0.11 — Settings apply immediately; the Save and Revert buttons are
-      gone, so every control behaves the same way
-- [x] v0.11.1 — a fresh install starts genuinely empty: no placeholder
-      `example.com` mappings, and Settings shows a real empty state instead
-- [x] Distribution — universal (Apple Silicon + Intel) build, Developer ID
-      signing under the hardened runtime, notarized and stapled DMG, all via
-      `Scripts/release.sh`
-- [x] v0.11.2 — the running version is shown in Settings, and Ottograph
-      updates itself via Sparkle (signed appcast, updates keep the code
-      signature so the Accessibility grant survives)
-- [x] v0.11.3 — Settings controls updates too: an automatic-check
-      preference, Check Now, and the running version beside the last check
-- [x] v0.11.4 — Copy Diagnostics puts the versions, the permission state,
-      and the recent engine log on the clipboard in one click; Settings
-      flags a signature name Mail doesn't have instead of letting it fail
-      silently at compose time; and an alias whose address Mail wraps in
-      invisible formatting characters no longer quietly gets nothing
-- [x] v0.11.5 — the ⇧⌘D takeover no longer costs you Message > Send Again:
-      outside a compose window the shortcut passes through to Mail's other
-      meaning for it, decided by Mail's own menu validation
-- [x] v0.11.6 — auto-Cc no longer mangles the recipient it just added when
-      the address is also in Contacts: Mail reports a matched recipient in a
-      different form, which read as a different address and triggered a
-      second, destructive add
-- [x] v0.11.7 — signatures apply with Mail's Format bar showing: its font
-      popups sit ahead of the header controls and were being taken for the
-      Signature popup (the first bug report). Compose controls are now found
-      by the stable identifiers Mail gives them (`popup_from`,
-      `popup_signature`, `Mail.ccField`), never by elimination — which is
-      also most of the way to localization-proof detection. Menu items have
-      no such identifiers, but signature names are user data rather than UI.
-      Settings opens tall enough for its content and scrolls to a newly
-      added mapping
-- [x] v0.11.8 — no more CPU drain on Mail while the Mac is locked: macOS
-      reports each Mail window as Mail itself during a lock, and the scan
-      for compose windows went round that loop — around 80% CPU overnight.
-      Every tree walk is now bounded (no cycles, capped size), and the
-      engine is fully event-driven: with no compose window open it sends
-      Mail nothing at all, and the fallback check runs only while one is
-      open
-- [x] v0.11.9 — auto-Cc handles its recipient once per sender per window:
-      putting back a signature Mail reset no longer re-runs the Cc step,
-      which could rewrite the field after Mail had matched the address to
-      Contacts and leave the contact's name in Cc as plain text
-- [x] v0.11.10 — auto-Cc never rewrites a Cc field it can't fully account
-      for: a pill without a readable address, or any text that isn't a
-      pill, leaves the field alone. Grounded in what Mail's Cc field was
-      measured to hold rather than inferred, and the log now records which
-      window and what shape of field each Cc write saw
+A test build in daily use, updated through Sparkle. What changed in each
+release is in [CHANGELOG.md](CHANGELOG.md) and on the
+[Releases](https://github.com/DaveHamilton/Ottograph/releases) page — the
+same notes the in-app update dialog shows.
+
+How it got here, before the changelog starts at 0.11.2:
+
+- **0.1–0.3** — an AppleScript engine that only saw script-created compose
+  windows, replaced by an Accessibility engine that handles real ⌘N, reply
+  and forward windows and reacts to events rather than polling.
+- **0.4–0.8** — a signed menu bar app with Start at Login, per-alias
+  auto-Cc, Send in 2 Minutes through Mail's own Send Later, a Settings
+  window, and the icon.
+- **0.9–0.11.1** — the optional ⇧⌘D takeover, Settings that load from Mail
+  and apply immediately, failure notifications, and a fresh install that
+  starts empty.
+
+Still open:
+
 - [ ] Verification on macOS 14 and 15 — developed and tested on macOS 26/27
+- [ ] Non-English Mail — compose controls are found by language-independent
+      identifiers, but some menu items are still matched by English title
+      (see Limitations)
 
 ## Limitations
 
