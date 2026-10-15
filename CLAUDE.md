@@ -206,7 +206,7 @@ around stored addresses, or every re-switch adds a duplicate.
 
 **A Cc pill reads back as `Name <addr>` once Mail resolves it against
 Contacts.** An unresolved pill's `AXValue` is the bare address; a resolved
-one's is `Otto Graph <\u{2066}otto@example.com\u{2069}>`. Comparing that
+one's is `Otto Graph <\u{2068}otto@example.com\u{2069}>`. Comparing that
 string whole against the config's address makes an address that *is* already
 in the field look missing, so auto-Cc rewrites the field — and Mail's parser
 mishandles a comma-separated list containing angle brackets, folding
@@ -237,24 +237,38 @@ rewritten with the name in it. Rare because it needs Mail to reset the
 signature in that window: 3 of ~20 reply-alls one morning, then none for
 a while. `ccHandledForSender` skips the Cc step on replays (switching
 From away and back still re-checks), and `ccPlan` separately refuses to
-rewrite past any pill with no `@` in it. What exact value the resolved
-pill reads back was never caught live — `cc-watch`-style polling saw
-bare addresses only — so don't build anything that depends on it.
+rewrite past any pill with no `@` in it. (The resolved pill's value has
+since been caught live — see below.)
 
-**And the gate alone wasn't enough: count pills from the field, not from
-what read.** It happened again on 0.11.9 — `Added Cc`, `Applied`, the
-post-apply reapply, and a second `Added Cc` in the same window, so the
-once-per-sender gate didn't hold (why is still unknown; the `Sender
-changed … Cc will be re-checked` line was added to find out). `ax-probe`
-then read the Cc field's `AXValue` as `Otto Graph\u{FFFC}`: the name as
-text, then a pill. A token field's own value carries one U+FFFC per
-pill. Since 0.11.9's `ccPlan` already refused a pill reading as a bare
-name, the resolved pill must have read as *nothing* — and `compactMap`
-silently dropped it, so the field looked empty and got rewritten.
-`ccPlan` now takes the field's value too, and refuses to rewrite unless
-every U+FFFC is matched by a pill that read as an address and any loose
-text is one of those addresses. The log line for `Added Cc` records the
-pill and child counts it saw.
+**And the gate alone wasn't enough, so the field's own value is checked
+too.** It happened again on 0.11.9 — `Added Cc`, `Applied`, the
+post-apply reapply, and a second `Added Cc` — and `ax-probe` then read
+the Cc field as `Otto Graph\u{FFFC}`: the name as text, then a pill.
+Measured since, with a 100ms poll of `Mail.ccField` through Reply All,
+Contacts resolution, and a reapply (Mail 16.0, macOS 27.2):
+
+- The field's `AXValue` is exactly one U+FFFC per pill and nothing
+  else — resolved or not. Text in it is typing that isn't a pill yet.
+- An unresolved pill reads as the bare address; a resolved one as
+  `Name <\u{2068}addr\u{2069}>` (FSI/PDI isolates). Neither ever read
+  back as nil or as a bare name, so the old theory that a resolved pill
+  "reads as nothing" was wrong.
+- `Otto Graph\u{FFFC}` is exactly what writing `Otto Graph,
+  otto@example.com` and committing produces: the name stays as text,
+  the address becomes a pill. Writing a bare address over a resolved
+  pill leaves one clean pill.
+- Mail's own `found 'None'` reset coincided with Contacts resolving the
+  pill both times it was caught; in both, and in a forced reapply, the
+  gate held — no second `Added Cc`. Why it didn't hold in the report is
+  still unknown. `Added Cc` and `Post-apply check` now carry a window
+  tag and `Added Cc` the shape of each pill (`addr`, `name<addr>`,
+  `name`, `nil` — never the address), and `Sender changed … Cc will be
+  re-checked` logs when the gate is cleared, so the next report says
+  which path it took.
+
+`ccPlan` therefore refuses to rewrite when the field has any text
+outside its pills, when it counts more U+FFFC than pills that read as
+addresses, or when any pill lacks an `@`.
 
 **Use `Message > Send Later > Send Later…`, not the toolbar button.** The menu
 is always present regardless of toolbar customization, pressing a menu item via
